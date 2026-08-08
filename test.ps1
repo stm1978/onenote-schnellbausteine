@@ -12,4 +12,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & "$root\artifacts\$Platform\$Configuration\Schnellbausteine.Tests.exe"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & "$root\artifacts\$Platform\$Configuration\Schnellbausteine.OneNoteClientHarness.exe"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& "$root\artifacts\$Platform\$Configuration\Schnellbausteine.AddInSmoke.exe" `
+    "$root\artifacts\$Platform\$Configuration\Schnellbausteine.AddIn.dll"
 exit $LASTEXITCODE

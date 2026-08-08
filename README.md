@@ -5,7 +5,7 @@
 OneNote Schnellbausteine ist ein bewusst kleines, lokales COM-Add-in für **OneNote
 Desktop unter Windows** (Microsoft 365 bzw. OneNote 2016). Markierte
 OneNote-Inhalte lassen sich als benannte Bausteine speichern und später über das
-Start-Menüband an der Cursorposition wieder einfügen.
+Menüband auf der Registerkarte **Einfügen** an der Cursorposition wieder einfügen.
 
 Das Projekt ist eine eigenständige Implementierung. Die Architektur orientiert
 sich an den öffentlich dokumentierten Mustern von
@@ -28,7 +28,7 @@ kopierten OneMore-Quellcode.
 > gewohnt synchronisieren bzw. sichern.
 
 1. Im Release
-   [**OneNote Schnellbausteine – Beta 0.2**](https://github.com/stm1978/onenote-schnellbausteine/releases/tag/v0.2.0-beta.1)
+   [**OneNote Schnellbausteine – Beta 0.2**](https://github.com/stm1978/onenote-schnellbausteine/releases/tag/v0.2.0-beta.2)
    die Datei **`OneNote-Schnellbausteine-Setup-Beta-0.2.exe`** herunterladen.
 2. OneNote vollständig schließen.
 3. Die heruntergeladene Setup-Datei doppelklicken und **Installieren** wählen.
@@ -58,7 +58,8 @@ standardmäßig erhalten.
    **Als Schnellbaustein speichern...** wählen und einen eindeutigen Namen
    eingeben. Bei Namenskonflikten wird explizit nachgefragt, ob überschrieben
    oder ein anderer Name verwendet werden soll.
-3. Im Register **Start** auf **Schnellbausteine** klicken und den gewünschten,
+3. Im Register **Einfügen** in der Gruppe **Malter365.de** auf
+   **Schnellbausteine** klicken und den gewünschten,
    alphabetisch sortierten direkten nativen Office-Menüeintrag wählen. Unter der
    nativen Trennlinie öffnet **OneNote Schnellbausteine verwalten** die bestehende
    Verwaltung zum Umbenennen oder Löschen nach Bestätigung.
@@ -199,8 +200,9 @@ pro Aktion erzeugt und explizit freigegeben; das von `OnConnection` gelieferte
 Application-Objekt wird nicht dauerhaft gehalten. Ribbon-Aktionen geben sofort
 an OneNote zurück. OneNote-COM-Aufrufe und WinForms-Dialoge laufen anschließend
 auf einem eigenen STA-Thread mit Windows-Message-Pump; Dialoge gehören dabei zum
-aktiven OneNote-Hauptfenster. Das einzelne Control auf der eingebauten
-Registerkarte **Einfügen** und die gleichnamigen Untermenüs in den Text-, Outline-,
+aktiven OneNote-Hauptfenster. Das Control **Schnellbausteine** in der Gruppe
+**Malter365.de** auf der eingebauten Registerkarte **Einfügen** und die gleichnamigen
+Untermenüs in den Text-, Outline-,
 Freihand- und Lasso-Kontextmenüs sind native Office-`dynamicMenu`-Controls. Ihr
 Inhalt besteht direkt aus alphabetisch sortierten nativen Buttons, einer nativen
 Trennlinie und dem abschließenden Manage-Button. Jedes geöffnete Menü besitzt

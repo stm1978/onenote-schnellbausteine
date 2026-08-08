@@ -10,6 +10,12 @@ function Assert-Contains([string]$Path, [string]$Expected) {
     }
 }
 
+function Assert-Equal([string]$Description, [object]$Actual, [object]$Expected) {
+    if ($Actual -ne $Expected) {
+        throw "$Description ist inkonsistent. Erwartet: $Expected; erhalten: $Actual"
+    }
+}
+
 $product = "OneNote Schnellbausteine"
 $publisher = "Stefan Malter | Malter365.de"
 $displayVersion = "Beta 0.2"
@@ -40,7 +46,38 @@ Assert-Contains "installer\Schnellbausteine.iss" "ArchitecturesAllowed=x86compat
 Assert-Contains "installer\Schnellbausteine.iss" "OneNotePlatform := ReadPlatformFromRegistry();"
 Assert-Contains "installer\Build-Setup.ps1" "[string]`$Version = `"$technicalVersion`""
 
-Assert-Contains "src\Schnellbausteine.AddIn\Ribbon.xml" "label=`"$product`""
+$ribbonPath = Join-Path $root "src\Schnellbausteine.AddIn\Ribbon.xml"
+$ribbon = New-Object Xml.XmlDocument
+$ribbon.PreserveWhitespace = $true
+$ribbon.Load($ribbonPath)
+$namespaces = New-Object Xml.XmlNamespaceManager($ribbon.NameTable)
+$namespaces.AddNamespace("r", "http://schemas.microsoft.com/office/2009/07/customui")
+$insertTab = $ribbon.SelectSingleNode("//r:tab[@idMso='TabInsert']", $namespaces)
+if (-not $insertTab) { throw "Ribbon.xml enthält keine TabInsert-Integration." }
+if ($ribbon.SelectSingleNode("//r:tab[@idMso='TabHome']", $namespaces)) {
+    throw "Ribbon.xml darf keine TabHome-Integration enthalten."
+}
+$group = $insertTab.SelectSingleNode("r:group[@id='sqGroup']", $namespaces)
+if (-not $group) { throw "Ribbon.xml enthält die erwartete Ribbon-Gruppe nicht." }
+Assert-Equal "Ribbon-Gruppenbeschriftung" $group.label "Malter365.de"
+$mainMenu = $group.SelectSingleNode("r:dynamicMenu[@id='sqMain']", $namespaces)
+if (-not $mainMenu) { throw "Ribbon.xml enthält das erwartete dynamicMenu nicht." }
+Assert-Equal "Ribbon-Control-Beschriftung" $mainMenu.label "Schnellbausteine"
+$contextMenus = @($ribbon.SelectNodes(
+    "/r:customUI/r:contextMenus/r:contextMenu/r:dynamicMenu", $namespaces))
+Assert-Equal "Anzahl der Kontext-Untermenüs" $contextMenus.Count 4
+foreach ($contextMenu in $contextMenus) {
+    Assert-Equal "Kontext-Untermenü-Beschriftung" $contextMenu.label "Schnellbausteine"
+}
+$saveButtons = @($ribbon.SelectNodes(
+    "/r:customUI/r:contextMenus/r:contextMenu/r:button", $namespaces))
+Assert-Equal "Anzahl der Kontext-Speicherbefehle" $saveButtons.Count 4
+foreach ($saveButton in $saveButtons) {
+    Assert-Equal "Kontext-Speicherbefehl" $saveButton.label "Als Schnellbaustein speichern..."
+}
+if ($ribbon.OuterXml.Contains("label=`"$product`"")) {
+    throw "Ribbon.xml darf den Produktnamen nicht als sichtbare Ribbon-Beschriftung verwenden."
+}
 Assert-Contains "README.md" $displayVersion
 Assert-Contains ".github\workflows\build-release.yml" $setupName
 
