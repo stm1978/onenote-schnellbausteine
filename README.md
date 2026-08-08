@@ -113,6 +113,10 @@ Zum Bauen werden Visual Studio 2022 Build Tools mit
 **.NET-Desktopentwicklung**, .NET Framework 4.8, PowerShell 5.1+ und die mit
 OneNote installierten Office-PIAs benötigt.
 
+Setup installiert die offizielle Microsoft-OneNote-PIA lokal neben dem Add-in.
+Dadurch verwendet der COM-Zugriff konkrete PIA-Interfaces statt dynamischer
+Dispatch-Bindung.
+
 ```powershell
 .\test.ps1 -Configuration Release -Platform x86
 .\test.ps1 -Configuration Release -Platform x64

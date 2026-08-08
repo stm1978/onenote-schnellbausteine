@@ -14,7 +14,7 @@ if (-not (Test-Path "$source\Schnellbausteine.AddIn.dll")) {
 
 $target = Join-Path $env:LOCALAPPDATA "Schnellbausteine\AddIn\$Platform"
 New-Item -ItemType Directory -Force -Path $target | Out-Null
-Copy-Item "$source\Schnellbausteine.AddIn.dll","$source\Schnellbausteine.Core.dll" -Destination $target -Force
+Copy-Item "$source\Schnellbausteine.AddIn.dll","$source\Schnellbausteine.Core.dll","$source\Microsoft.Office.Interop.OneNote.dll" -Destination $target -Force
 
 $view = if ($Platform -eq "x86") { [Microsoft.Win32.RegistryView]::Registry32 } else { [Microsoft.Win32.RegistryView]::Registry64 }
 $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::CurrentUser, $view)

@@ -56,6 +56,10 @@ try {
 
     $assembly = Join-Path $appRoot "$Platform\Schnellbausteine.AddIn.dll"
     if (-not (Test-Path $assembly)) { throw "Installierte Assembly fehlt: $assembly" }
+    $oneNotePia = Join-Path $appRoot "$Platform\Microsoft.Office.Interop.OneNote.dll"
+    if (-not (Test-Path $oneNotePia)) {
+        throw "Installierte OneNote-PIA fehlt: $oneNotePia"
+    }
 
     $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
         [Microsoft.Win32.RegistryHive]::CurrentUser, $registryView)

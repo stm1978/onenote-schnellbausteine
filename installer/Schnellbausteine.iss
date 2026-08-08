@@ -56,8 +56,10 @@ german.FinishedLabelNoIcons=Schnellbausteine wurde erfolgreich für OneNote inst
 [Files]
 Source: "..\artifacts\x86\Release\Schnellbausteine.AddIn.dll"; DestDir: "{app}\x86"; Flags: ignoreversion; Check: InstallX86
 Source: "..\artifacts\x86\Release\Schnellbausteine.Core.dll"; DestDir: "{app}\x86"; Flags: ignoreversion; Check: InstallX86
+Source: "..\artifacts\x86\Release\Microsoft.Office.Interop.OneNote.dll"; DestDir: "{app}\x86"; Flags: ignoreversion; Check: InstallX86
 Source: "..\artifacts\x64\Release\Schnellbausteine.AddIn.dll"; DestDir: "{app}\x64"; Flags: ignoreversion; Check: InstallX64
 Source: "..\artifacts\x64\Release\Schnellbausteine.Core.dll"; DestDir: "{app}\x64"; Flags: ignoreversion; Check: InstallX64
+Source: "..\artifacts\x64\Release\Microsoft.Office.Interop.OneNote.dll"; DestDir: "{app}\x64"; Flags: ignoreversion; Check: InstallX64
 
 [InstallDelete]
 Type: filesandordirs; Name: "{app}\x86"; Check: InstallX64

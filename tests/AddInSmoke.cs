@@ -9,9 +9,10 @@ namespace Schnellbausteine.Tests
     {
         private static int Main(string[] args)
         {
-            if (args.Length != 1)
+            if (args.Length < 1 || args.Length > 2)
             {
-                Console.Error.WriteLine("Usage: Schnellbausteine.AddInSmoke.exe <add-in-path>");
+                Console.Error.WriteLine(
+                    "Usage: Schnellbausteine.AddInSmoke.exe <add-in-path> [--require-selection]");
                 return 1;
             }
 
@@ -47,11 +48,30 @@ namespace Schnellbausteine.Tests
                     (string)saveButton.Attribute("onAction") != "SaveSelection" ||
                     (string)saveButton.Attribute("insertBeforeMso") != "Cut" ||
                     saveButton.Attribute("getVisible") != null ||
+                    type.GetMethod("CanSaveSelection") == null ||
                     type.GetMethod("SaveSelection") == null ||
                     !menuXml.Contains("sqEmpty"))
                 {
                     Console.Error.WriteLine("Ribbon content is incomplete.");
                     return 1;
+                }
+
+                if (args.Length == 2)
+                {
+                    if (args[1] != "--require-selection")
+                    {
+                        Console.Error.WriteLine("Unknown option: " + args[1]);
+                        return 1;
+                    }
+
+                    bool hasSelection = (bool)type.GetMethod("CanSaveSelection").Invoke(
+                        addIn, new object[] { null });
+                    if (!hasSelection)
+                    {
+                        Console.Error.WriteLine(
+                            "OneNote did not return a readable active text selection.");
+                        return 1;
+                    }
                 }
 
                 Console.WriteLine("Managed add-in and Ribbon smoke test succeeded.");

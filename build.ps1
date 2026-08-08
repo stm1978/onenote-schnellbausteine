@@ -59,8 +59,9 @@ $coreSources = Get-ChildItem "$root\src\Schnellbausteine.Core" -Recurse -Filter 
 if ($LASTEXITCODE -ne 0) { throw "Core-Kompilierung fehlgeschlagen." }
 
 $addinSources = Get-ChildItem "$root\src\Schnellbausteine.AddIn" -Recurse -Filter *.cs | ForEach-Object FullName
-& $csc @common /target:library /platform:$Platform /out:"$output\Schnellbausteine.AddIn.dll" /r:"$output\Schnellbausteine.Core.dll" /r:System.Xml.Linq.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:Microsoft.CSharp.dll /link:"$oneNote" /link:"$office" /link:"$extensibility" /resource:"$root\src\Schnellbausteine.AddIn\Ribbon.xml,Schnellbausteine.AddIn.Ribbon.xml" $addinSources
+& $csc @common /target:library /platform:$Platform /out:"$output\Schnellbausteine.AddIn.dll" /r:"$output\Schnellbausteine.Core.dll" /r:System.Xml.Linq.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:Microsoft.CSharp.dll /r:"$oneNote" /link:"$office" /link:"$extensibility" /resource:"$root\src\Schnellbausteine.AddIn\Ribbon.xml,Schnellbausteine.AddIn.Ribbon.xml" $addinSources
 if ($LASTEXITCODE -ne 0) { throw "Add-in-Kompilierung fehlgeschlagen." }
+Copy-Item $oneNote "$output\Microsoft.Office.Interop.OneNote.dll" -Force
 
 $testSources = Get-ChildItem "$root\tests\Schnellbausteine.Tests" -Recurse -Filter *.cs | ForEach-Object FullName
 & $csc @common /target:exe /platform:anycpu /out:"$output\Schnellbausteine.Tests.exe" /r:"$output\Schnellbausteine.Core.dll" /r:System.Xml.Linq.dll $testSources
