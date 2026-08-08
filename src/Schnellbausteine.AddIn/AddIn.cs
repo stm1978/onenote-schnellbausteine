@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -24,13 +25,13 @@ namespace Schnellbausteine.AddIn
         private readonly SnippetRepository repository = new SnippetRepository(SnippetRepository.DefaultRoot);
         private readonly StaDispatcher dispatcher = new StaDispatcher();
         private Action<IntPtr> saveSelectionAction;
-        private Action<IntPtr> insertSnippetAction;
+        private Action<IntPtr> openSnippetMenuAction;
         private int operationActive;
 
         public AddIn()
         {
             saveSelectionAction = SaveSelectionCore;
-            insertSnippetAction = InsertSnippetCore;
+            openSnippetMenuAction = OpenSnippetMenuCore;
         }
 
         public void OnConnection(object application, ext_ConnectMode connectMode, object addInInstance, ref Array custom)
@@ -181,75 +182,111 @@ namespace Schnellbausteine.AddIn
             Log.Trace("command.SaveSelection", "exit-cancelled");
         }
 
-        public void InsertSnippet(IRibbonControl control)
+        public void OpenSnippetMenu(IRibbonControl control)
         {
-            Log.Trace("callback.InsertSnippet", "entry");
+            Log.Trace("callback.OpenSnippetMenu", "entry");
             var callbackBodyCompleted = new TaskCompletionSource<object>();
             try
             {
                 DispatchUserAction(
-                    "InsertSnippet",
+                    "OpenSnippetMenu",
                     callbackBodyCompleted.Task,
-                    "Der Schnellbaustein konnte nicht eingefügt werden.",
-                    insertSnippetAction);
+                    "Die Schnellbausteine konnten nicht geöffnet werden.",
+                    openSnippetMenuAction);
             }
             finally
             {
                 callbackBodyCompleted.SetResult(null);
-                Log.Trace("callback.InsertSnippet", "exit");
+                Log.Trace("callback.OpenSnippetMenu", "exit");
             }
         }
 
-        private void InsertSnippetCore(IntPtr fallbackOwnerHandle)
+        private void OpenSnippetMenuCore(IntPtr fallbackOwnerHandle)
         {
-            Log.Trace("command.InsertSnippet", "entry");
-            using (var oneNote = new OneNoteClient())
-            {
-                XDocument anchoredPage = oneNote.ReadCurrentPage();
-                OneNoteSelectionInfo selection = OneNoteXml.AnalyzeSelection(anchoredPage);
-                Log.Diagnostic("onenote.selection.capture", selection.ToDiagnosticString());
-                if (!selection.IsUsable)
-                {
-                    throw new InvalidOperationException(selection.Problem);
-                }
-
-                IntPtr ownerHandle = oneNote.CurrentWindowHandle;
-                var owner = new WindowHandleOwner(
-                    ownerHandle == IntPtr.Zero ? fallbackOwnerHandle : ownerHandle);
-                InsertSnippetOperation.Execute(
-                    oneNote,
-                    anchoredPage,
-                    owner,
-                    delegate { return new InsertDialog(repository.GetAll()); },
-                    repository.LoadFragment);
-            }
-            Log.Trace("command.InsertSnippet", "exit");
-        }
-
-        public void ManageSnippets(IRibbonControl control)
-        {
-            Log.Trace("callback.ManageSnippets", "entry");
-            var callbackBodyCompleted = new TaskCompletionSource<object>();
+            Log.Trace("command.OpenSnippetMenu", "entry");
+            IList<Snippet> snippets = repository.GetAll();
+            OneNoteClient oneNote = null;
+            XDocument anchoredPage = null;
+            Exception selectionException = null;
+            IntPtr ownerHandle = fallbackOwnerHandle;
             try
             {
-                DispatchUserAction(
-                    "ManageSnippets",
-                    callbackBodyCompleted.Task,
-                    "Die Verwaltung konnte nicht geöffnet werden.",
-                    delegate(IntPtr ownerHandle)
+                if (snippets.Count > 0)
+                {
+                    oneNote = new OneNoteClient();
+                    try
                     {
-                        using (var dialog = new ManageDialog(repository, delegate { }))
+                        anchoredPage = oneNote.ReadCurrentPage();
+                        OneNoteSelectionInfo selection =
+                            OneNoteXml.AnalyzeSelection(anchoredPage);
+                        Log.Diagnostic(
+                            "onenote.selection.capture",
+                            selection.ToDiagnosticString());
+                        if (!selection.IsUsable)
                         {
-                            Log.Trace("ui.ManageDialog", "before");
-                            dialog.ShowDialog(new WindowHandleOwner(ownerHandle));
-                            Log.Trace("ui.ManageDialog", "after");
+                            selectionException =
+                                new InvalidOperationException(selection.Problem);
                         }
+                    }
+                    catch (Exception exception)
+                    {
+                        selectionException = exception;
+                    }
+                    if (oneNote.CurrentWindowHandle != IntPtr.Zero)
+                    {
+                        ownerHandle = oneNote.CurrentWindowHandle;
+                    }
+                }
+
+                var owner = new WindowHandleOwner(
+                    ownerHandle == IntPtr.Zero ? fallbackOwnerHandle : ownerHandle);
+                SnippetMenuChoice choice;
+                using (ISnippetMenuPopup popup = new SnippetMenuPopup(snippets))
+                {
+                    choice = popup.Choose(owner);
+                }
+                Log.Trace("ui.SnippetMenuPopup", "disposed");
+
+                SnippetMenuChoiceDispatcher.Execute(
+                    choice,
+                    delegate(Snippet snippet)
+                    {
+                        if (selectionException != null) throw selectionException;
+                        if (oneNote == null || anchoredPage == null)
+                        {
+                            throw new InvalidOperationException(
+                                "Die OneNote-Auswahl wurde nicht verankert.");
+                        }
+                        InsertSnippetOperation.Execute(
+                            oneNote,
+                            anchoredPage,
+                            snippet,
+                            repository.LoadFragment);
+                    },
+                    delegate
+                    {
+                        if (oneNote != null)
+                        {
+                            oneNote.Dispose();
+                            oneNote = null;
+                        }
+                        ShowManageDialog(owner);
                     });
             }
             finally
             {
-                callbackBodyCompleted.SetResult(null);
-                Log.Trace("callback.ManageSnippets", "exit");
+                if (oneNote != null) oneNote.Dispose();
+            }
+            Log.Trace("command.OpenSnippetMenu", "exit");
+        }
+
+        private void ShowManageDialog(IWin32Window owner)
+        {
+            using (var dialog = new ManageDialog(repository, delegate { }))
+            {
+                Log.Trace("ui.ManageDialog", "before");
+                dialog.ShowDialog(owner);
+                Log.Trace("ui.ManageDialog", "after");
             }
         }
 

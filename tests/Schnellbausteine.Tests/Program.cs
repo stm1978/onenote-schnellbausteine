@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Xml.Linq;
 using Schnellbausteine.Core;
 
@@ -18,6 +20,8 @@ namespace Schnellbausteine.Tests
             SelectionExtractsRichContentAndDependencies,
             SelectionExtractionPrunesPartialParagraphSiblings,
             SelectionExtractionPrunesPartialTableSiblings,
+            SelectionStoresOutlineMinimumWidth,
+            SelectionFallsBackToTableAndImageWidths,
             EmptyCursorIsNotASelection,
             SelectionDiagnosticsContainOnlyStructure,
             CapturedSelectionSurvivesLaterSelectionLoss,
@@ -47,6 +51,16 @@ namespace Schnellbausteine.Tests
             PostInsertCaretIsExactForList,
             PostInsertCaretIsExactForImage,
             PostInsertCaretIsExactForMultipleParagraphs,
+            NarrowTargetOutlineExpandsForText,
+            WideTargetOutlineRemainsUnchanged,
+            TargetWidthChangeIsOutlineScoped,
+            MultiParagraphSnippetExpandsTarget,
+            ListSnippetExpandsTarget,
+            TableSnippetExpandsTarget,
+            ImageSnippetExpandsTarget,
+            MissingAndInvalidWidthsAreIgnored,
+            WidthHandlingIsCultureInvariant,
+            LegacySnippetDoesNotResizeTarget,
             UserInterfaceStringsUseGermanDiacritics,
             MissingSelectionIsRejectedWithoutMutation,
             AmbiguousSelectionIsRejectedWithoutMutation,
@@ -157,13 +171,58 @@ namespace Schnellbausteine.Tests
                 throw new Exception("Unselektiertes Tabellenbild wurde aufgelost: " + callback);
             });
             XmlEqualIgnoringNamespaceDeclarations(
-                Fragment(
+                FragmentWithMinimumWidth(
                     "<one:OE><one:Table>" +
                     "<one:Columns><one:Column index=\"0\" width=\"100\"/><one:Column index=\"1\" width=\"120\"/></one:Columns><one:Row>" +
                     "<one:Cell><one:OEChildren><one:OE><one:T><![CDATA[]]></one:T></one:OE></one:OEChildren></one:Cell>" +
                     "<one:Cell><one:OEChildren><one:OE><one:T><![CDATA[auswahl]]></one:T></one:OE></one:OEChildren></one:Cell>" +
-                    "</one:Row></one:Table></one:OE>"),
+                    "</one:Row></one:Table></one:OE>",
+                    "220"),
                 snippet);
+        }
+
+        private static void SelectionStoresOutlineMinimumWidth()
+        {
+            XDocument source = Page(
+                "<one:Outline><one:Position x=\"72\" y=\"96\" z=\"0\"/>" +
+                "<one:Size width=\"320.5\" height=\"47.25\"/><one:OEChildren><one:OE>" +
+                "<one:T selected=\"all\"><![CDATA[Text]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+
+            XDocument snippet = OneNoteXml.ExtractSelection(source, null);
+
+            XmlEqualIgnoringNamespaceDeclarations(
+                FragmentWithMinimumWidth(
+                    "<one:OE><one:T><![CDATA[Text]]></one:T></one:OE>",
+                    "320.5"),
+                snippet);
+            Assert(!snippet.Descendants(OneNoteXml.One + "Position").Any(),
+                "Die Quellposition darf nicht im Fragment landen.");
+            Assert(!snippet.Descendants(OneNoteXml.One + "Size").Any(),
+                "Die Outline-Geometrie darf nicht als Inhalt dupliziert werden.");
+        }
+
+        private static void SelectionFallsBackToTableAndImageWidths()
+        {
+            XDocument tableSource = Page(
+                "<one:Outline><one:OEChildren><one:OE><one:Table selected=\"all\">" +
+                "<one:Columns><one:Column index=\"0\" width=\"100.25\"/>" +
+                "<one:Column index=\"1\" width=\"120.5\"/></one:Columns>" +
+                "<one:Row><one:Cell><one:OEChildren><one:OE><one:T><![CDATA[Tabelle]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Cell></one:Row></one:Table></one:OE>" +
+                "</one:OEChildren></one:Outline>");
+            XDocument imageSource = Page(
+                "<one:Outline><one:OEChildren><one:OE>" +
+                "<one:Image selected=\"all\" format=\"png\"><one:Size width=\"240.75\" height=\"80\"/>" +
+                "<one:Data>BASE64</one:Data></one:Image></one:OE></one:OEChildren></one:Outline>");
+
+            XDocument tableSnippet = OneNoteXml.ExtractSelection(tableSource, null);
+            XDocument imageSnippet = OneNoteXml.ExtractSelection(imageSource, null);
+
+            Equal("220.75", (string)tableSnippet.Root
+                .Element(OneNoteXml.Snippet + "Geometry").Attribute("minWidth"));
+            Equal("240.75", (string)imageSnippet.Root
+                .Element(OneNoteXml.Snippet + "Geometry").Attribute("minWidth"));
         }
 
         private static void InlineSelectionIsReplaced()
@@ -637,6 +696,262 @@ namespace Schnellbausteine.Tests
             AssertSinglePostInsertCaret(page);
         }
 
+        private static void NarrowTargetOutlineExpandsForText()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:Position x=\"10\" y=\"20\" z=\"0\"/>" +
+                "<one:Size width=\"80\" height=\"18\"/><one:OEChildren><one:OE>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+
+            OneNoteXml.InsertAtSelection(
+                page,
+                FragmentWithMinimumWidth(
+                    "<one:OE><one:T><![CDATA[Text]]></one:T></one:OE>",
+                    "160.5"));
+
+            XmlEqual(Page(
+                "<one:Outline><one:Position x=\"10\" y=\"20\" z=\"0\"/>" +
+                "<one:Size width=\"160.5\" height=\"18\"/><one:OEChildren><one:OE>" +
+                "<one:T><![CDATA[Text]]></one:T><one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>"), page);
+        }
+
+        private static void WideTargetOutlineRemainsUnchanged()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:Size width=\"300.25\" height=\"18\"/>" +
+                "<one:OEChildren><one:OE><one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+
+            OneNoteXml.InsertAtSelection(
+                page,
+                FragmentWithMinimumWidth(
+                    "<one:OE><one:T><![CDATA[Text]]></one:T></one:OE>",
+                    "160.5"));
+
+            XmlEqual(Page(
+                "<one:Outline><one:Size width=\"300.25\" height=\"18\"/>" +
+                "<one:OEChildren><one:OE><one:T><![CDATA[Text]]></one:T>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>"), page);
+        }
+
+        private static void TargetWidthChangeIsOutlineScoped()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:Size width=\"40\" height=\"10\"/><one:OEChildren><one:OE>" +
+                "<one:T><![CDATA[Andere Outline]]></one:T></one:OE></one:OEChildren></one:Outline>" +
+                "<one:Outline><one:Size width=\"60\" height=\"20\"/><one:OEChildren><one:OE>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T></one:OE></one:OEChildren></one:Outline>");
+
+            OneNoteXml.InsertAtSelection(
+                page,
+                FragmentWithMinimumWidth(
+                    "<one:OE><one:T><![CDATA[Ziel]]></one:T></one:OE>",
+                    "180"));
+
+            XmlEqual(Page(
+                "<one:Outline><one:Size width=\"40\" height=\"10\"/><one:OEChildren><one:OE>" +
+                "<one:T><![CDATA[Andere Outline]]></one:T></one:OE></one:OEChildren></one:Outline>" +
+                "<one:Outline><one:Size width=\"180\" height=\"20\"/><one:OEChildren><one:OE>" +
+                "<one:T><![CDATA[Ziel]]></one:T><one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>"), page);
+        }
+
+        private static void MultiParagraphSnippetExpandsTarget()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:Size width=\"90\" height=\"40\"/><one:OEChildren>" +
+                "<one:OE selected=\"partial\"><one:T selected=\"all\"><![CDATA[]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>");
+
+            OneNoteXml.InsertAtSelection(
+                page,
+                FragmentWithMinimumWidth(
+                    "<one:OE><one:T><![CDATA[Absatz 1]]></one:T></one:OE>" +
+                    "<one:OE><one:T><![CDATA[Absatz 2]]></one:T></one:OE>",
+                    "260"));
+
+            XmlEqual(Page(
+                "<one:Outline><one:Size width=\"260\" height=\"40\"/><one:OEChildren>" +
+                "<one:OE><one:T><![CDATA[Absatz 1]]></one:T></one:OE>" +
+                "<one:OE><one:T><![CDATA[Absatz 2]]></one:T></one:OE>" +
+                "<one:OE><one:T selected=\"all\"><![CDATA[]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>"), page);
+        }
+
+        private static void ListSnippetExpandsTarget()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:Size width=\"100\" height=\"24\"/><one:OEChildren>" +
+                "<one:OE selected=\"partial\"><one:T selected=\"all\"><![CDATA[]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>");
+
+            OneNoteXml.InsertAtSelection(
+                page,
+                FragmentWithMinimumWidth(
+                    "<one:OE><one:List><one:Bullet bullet=\"2\"/></one:List>" +
+                    "<one:T><![CDATA[Listenpunkt]]></one:T></one:OE>",
+                    "210"));
+
+            XmlEqual(Page(
+                "<one:Outline><one:Size width=\"210\" height=\"24\"/><one:OEChildren>" +
+                "<one:OE><one:List><one:Bullet bullet=\"2\"/></one:List>" +
+                "<one:T><![CDATA[Listenpunkt]]></one:T></one:OE>" +
+                "<one:OE><one:T selected=\"all\"><![CDATA[]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>"), page);
+        }
+
+        private static void TableSnippetExpandsTarget()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:Size width=\"120\" height=\"50\"/><one:OEChildren>" +
+                "<one:OE selected=\"partial\"><one:T selected=\"all\"><![CDATA[]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>");
+            string table =
+                "<one:OE><one:Table><one:Columns>" +
+                "<one:Column index=\"0\" width=\"130\"/><one:Column index=\"1\" width=\"140\"/>" +
+                "</one:Columns><one:Row><one:Cell><one:OEChildren><one:OE>" +
+                "<one:T><![CDATA[Tabelle]]></one:T></one:OE></one:OEChildren></one:Cell>" +
+                "</one:Row></one:Table></one:OE>";
+
+            OneNoteXml.InsertAtSelection(
+                page,
+                FragmentWithMinimumWidth(table, "270"));
+
+            XmlEqual(Page(
+                "<one:Outline><one:Size width=\"270\" height=\"50\"/><one:OEChildren>" +
+                table +
+                "<one:OE><one:T selected=\"all\"><![CDATA[]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>"), page);
+        }
+
+        private static void ImageSnippetExpandsTarget()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:Size width=\"110\" height=\"35\"/><one:OEChildren>" +
+                "<one:OE selected=\"partial\"><one:T selected=\"all\"><![CDATA[]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>");
+            string image =
+                "<one:OE><one:Image format=\"png\"><one:Size width=\"240\" height=\"80\"/>" +
+                "<one:Data>BASE64</one:Data></one:Image></one:OE>";
+
+            OneNoteXml.InsertAtSelection(
+                page,
+                FragmentWithMinimumWidth(image, "240"));
+
+            XmlEqual(Page(
+                "<one:Outline><one:Size width=\"240\" height=\"35\"/><one:OEChildren>" +
+                image +
+                "<one:OE><one:T selected=\"all\"><![CDATA[]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>"), page);
+        }
+
+        private static void MissingAndInvalidWidthsAreIgnored()
+        {
+            XDocument missingTargetSize = Page(
+                "<one:Outline><one:OEChildren><one:OE>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>");
+            XDocument invalidTargetWidth = Page(
+                "<one:Outline><one:Size width=\"unbekannt\" height=\"20\"/><one:OEChildren><one:OE>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>");
+            XDocument invalidMetadataTarget = Page(
+                "<one:Outline><one:Size width=\"75\" height=\"20\"/><one:OEChildren><one:OE>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>");
+            XDocument invalidMetadata = FragmentWithMinimumWidth(
+                "<one:OE><one:T><![CDATA[Text]]></one:T></one:OE>",
+                "keine-zahl");
+            XDocument invalidSourceSize = Page(
+                "<one:Outline><one:Size width=\"-12\" height=\"20\"/><one:OEChildren><one:OE>" +
+                "<one:T selected=\"all\"><![CDATA[Quelle]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>");
+
+            OneNoteXml.InsertAtSelection(
+                missingTargetSize,
+                FragmentWithMinimumWidth(
+                    "<one:OE><one:T><![CDATA[Text]]></one:T></one:OE>",
+                    "150"));
+            OneNoteXml.InsertAtSelection(
+                invalidTargetWidth,
+                FragmentWithMinimumWidth(
+                    "<one:OE><one:T><![CDATA[Text]]></one:T></one:OE>",
+                    "150"));
+            OneNoteXml.InsertAtSelection(invalidMetadataTarget, invalidMetadata);
+            XDocument invalidSourceSnippet =
+                OneNoteXml.ExtractSelection(invalidSourceSize, null);
+
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren><one:OE><one:T><![CDATA[Text]]></one:T>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>"), missingTargetSize);
+            XmlEqual(Page(
+                "<one:Outline><one:Size width=\"unbekannt\" height=\"20\"/><one:OEChildren><one:OE>" +
+                "<one:T><![CDATA[Text]]></one:T><one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>"), invalidTargetWidth);
+            XmlEqual(Page(
+                "<one:Outline><one:Size width=\"75\" height=\"20\"/><one:OEChildren><one:OE>" +
+                "<one:T><![CDATA[Text]]></one:T><one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>"), invalidMetadataTarget);
+            Assert(invalidSourceSnippet.Root.Element(OneNoteXml.Snippet + "Geometry") == null,
+                "Ungültige Quellbreite darf kein Geometriemetadatum erzeugen.");
+        }
+
+        private static void WidthHandlingIsCultureInvariant()
+        {
+            CultureInfo originalCulture = Thread.CurrentThread.CurrentCulture;
+            CultureInfo originalUiCulture = Thread.CurrentThread.CurrentUICulture;
+            try
+            {
+                Thread.CurrentThread.CurrentCulture = new CultureInfo("de-DE");
+                Thread.CurrentThread.CurrentUICulture = new CultureInfo("de-DE");
+                XDocument source = Page(
+                    "<one:Outline><one:Size width=\"123.5\" height=\"20\"/>" +
+                    "<one:OEChildren><one:OE><one:T selected=\"all\"><![CDATA[Text]]></one:T>" +
+                    "</one:OE></one:OEChildren></one:Outline>");
+                XDocument target = Page(
+                    "<one:Outline><one:Size width=\"80.25\" height=\"20\"/>" +
+                    "<one:OEChildren><one:OE><one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                    "</one:OE></one:OEChildren></one:Outline>");
+
+                XDocument snippet = OneNoteXml.ExtractSelection(source, null);
+                OneNoteXml.InsertAtSelection(target, snippet);
+
+                Equal("123.5", (string)snippet.Root
+                    .Element(OneNoteXml.Snippet + "Geometry").Attribute("minWidth"));
+                XmlEqual(Page(
+                    "<one:Outline><one:Size width=\"123.5\" height=\"20\"/>" +
+                    "<one:OEChildren><one:OE><one:T><![CDATA[Text]]></one:T>" +
+                    "<one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                    "</one:OE></one:OEChildren></one:Outline>"), target);
+            }
+            finally
+            {
+                Thread.CurrentThread.CurrentCulture = originalCulture;
+                Thread.CurrentThread.CurrentUICulture = originalUiCulture;
+            }
+        }
+
+        private static void LegacySnippetDoesNotResizeTarget()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:Size width=\"70\" height=\"18\"/><one:OEChildren><one:OE>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>");
+
+            OneNoteXml.InsertAtSelection(
+                page,
+                Fragment("<one:OE><one:T><![CDATA[Altbestand]]></one:T></one:OE>"));
+
+            XmlEqual(Page(
+                "<one:Outline><one:Size width=\"70\" height=\"18\"/><one:OEChildren><one:OE>" +
+                "<one:T><![CDATA[Altbestand]]></one:T><one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>"), page);
+        }
+
         private static void UserInterfaceStringsUseGermanDiacritics()
         {
             string root = FindRepositoryRoot();
@@ -682,7 +997,9 @@ namespace Schnellbausteine.Tests
 
             string dialogs = File.ReadAllText(
                 Path.Combine(root, "src", "Schnellbausteine.AddIn", "Dialogs.cs"));
-            Assert(dialogs.Contains("\"Einfügen\""), "UI-Text Einfügen fehlt.");
+            Assert(
+                dialogs.Contains("\"Schnellbausteine verwalten\""),
+                "UI-Text Schnellbausteine verwalten fehlt.");
             Assert(dialogs.Contains("\"Löschen\""), "UI-Text Löschen fehlt.");
             Assert(dialogs.Contains("\"Schließen\""), "UI-Text Schließen fehlt.");
         }
@@ -769,6 +1086,18 @@ namespace Schnellbausteine.Tests
         {
             return XDocument.Parse("<sq:Snippet xmlns:sq=\"" + OneNoteXml.Snippet + "\" xmlns:one=\"" + OneNoteXml.One + "\" version=\"1\"><sq:TagDefs>" +
                 definitions + "</sq:TagDefs><sq:QuickStyleDefs/><sq:Content>" + content + "</sq:Content></sq:Snippet>", LoadOptions.PreserveWhitespace);
+        }
+
+        private static XDocument FragmentWithMinimumWidth(
+            string content,
+            string minimumWidth)
+        {
+            XDocument fragment = Fragment(content);
+            fragment.Root.AddFirst(
+                new XElement(
+                    OneNoteXml.Snippet + "Geometry",
+                    new XAttribute("minWidth", minimumWidth)));
+            return fragment;
         }
 
         private static void AssertSinglePostInsertCaret(XDocument page)

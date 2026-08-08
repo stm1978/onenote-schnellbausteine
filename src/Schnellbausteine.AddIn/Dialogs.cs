@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Forms;
 using Schnellbausteine.Core;
 
@@ -49,71 +52,377 @@ namespace Schnellbausteine.AddIn
         }
     }
 
-    internal sealed class InsertDialog : Form, IInsertSnippetPicker
+    internal enum SnippetMenuEntryKind
     {
-        private readonly ListBox list;
+        Snippet,
+        Empty,
+        Separator,
+        Manage
+    }
 
-        public InsertDialog(IList<Snippet> snippets)
+    internal sealed class SnippetMenuEntry
+    {
+        private SnippetMenuEntry(
+            SnippetMenuEntryKind kind,
+            string text,
+            Snippet snippet,
+            bool enabled)
         {
-            Text = "Schnellbaustein einfügen";
-            StartPosition = FormStartPosition.CenterParent;
-            MinimumSize = new Size(420, 280);
-            Size = new Size(520, 360);
-            ShowInTaskbar = false;
+            Kind = kind;
+            Text = text;
+            Snippet = snippet;
+            Enabled = enabled;
+        }
 
+        public SnippetMenuEntryKind Kind { get; private set; }
+        public string Text { get; private set; }
+        public Snippet Snippet { get; private set; }
+        public bool Enabled { get; private set; }
+
+        public static IList<SnippetMenuEntry> Create(IList<Snippet> snippets)
+        {
+            if (snippets == null) throw new ArgumentNullException("snippets");
+            var entries = snippets
+                .OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
+                .Select(item => new SnippetMenuEntry(
+                    SnippetMenuEntryKind.Snippet,
+                    item.Name,
+                    item,
+                    true))
+                .ToList();
+            if (entries.Count == 0)
+            {
+                entries.Add(new SnippetMenuEntry(
+                    SnippetMenuEntryKind.Empty,
+                    "Keine Schnellbausteine gespeichert",
+                    null,
+                    false));
+            }
+            entries.Add(new SnippetMenuEntry(
+                SnippetMenuEntryKind.Separator,
+                string.Empty,
+                null,
+                false));
+            entries.Add(new SnippetMenuEntry(
+                SnippetMenuEntryKind.Manage,
+                "Schnellbausteine verwalten",
+                null,
+                true));
+            return entries;
+        }
+
+        public static int FindEnabledIndex(
+            IList<SnippetMenuEntry> entries,
+            int selectedIndex,
+            int lastEnabledIndex)
+        {
+            if (entries == null) throw new ArgumentNullException("entries");
+            int direction = selectedIndex > lastEnabledIndex ? 1 : -1;
+            for (int index = selectedIndex + direction;
+                index >= 0 && index < entries.Count;
+                index += direction)
+            {
+                if (entries[index].Enabled) return index;
+            }
+            return lastEnabledIndex >= 0 &&
+                lastEnabledIndex < entries.Count &&
+                entries[lastEnabledIndex].Enabled
+                ? lastEnabledIndex
+                : -1;
+        }
+    }
+
+    internal enum SnippetMenuChoiceKind
+    {
+        Cancel,
+        Insert,
+        Manage
+    }
+
+    internal sealed class SnippetMenuChoice
+    {
+        private SnippetMenuChoice(SnippetMenuChoiceKind kind, Snippet snippet)
+        {
+            Kind = kind;
+            Snippet = snippet;
+        }
+
+        public SnippetMenuChoiceKind Kind { get; private set; }
+        public Snippet Snippet { get; private set; }
+
+        public static SnippetMenuChoice Cancel()
+        {
+            return new SnippetMenuChoice(SnippetMenuChoiceKind.Cancel, null);
+        }
+
+        public static SnippetMenuChoice Insert(Snippet snippet)
+        {
+            if (snippet == null) throw new ArgumentNullException("snippet");
+            return new SnippetMenuChoice(SnippetMenuChoiceKind.Insert, snippet);
+        }
+
+        public static SnippetMenuChoice Manage()
+        {
+            return new SnippetMenuChoice(SnippetMenuChoiceKind.Manage, null);
+        }
+    }
+
+    internal static class SnippetMenuChoiceDispatcher
+    {
+        public static void Execute(
+            SnippetMenuChoice choice,
+            Action<Snippet> insert,
+            Action manage)
+        {
+            if (choice == null) throw new ArgumentNullException("choice");
+            if (insert == null) throw new ArgumentNullException("insert");
+            if (manage == null) throw new ArgumentNullException("manage");
+            if (choice.Kind == SnippetMenuChoiceKind.Insert)
+            {
+                insert(choice.Snippet);
+            }
+            else if (choice.Kind == SnippetMenuChoiceKind.Manage)
+            {
+                manage();
+            }
+        }
+    }
+
+    internal interface ISnippetMenuPopup : IDisposable
+    {
+        SnippetMenuChoice Choose(IWin32Window owner);
+    }
+
+    internal sealed class SnippetMenuPopup : Form, ISnippetMenuPopup
+    {
+        private const int ItemHeight = 27;
+        private readonly ListBox list;
+        private SnippetMenuChoice choice = SnippetMenuChoice.Cancel();
+        private int lastEnabledIndex = -1;
+
+        public SnippetMenuPopup(IList<Snippet> snippets)
+        {
+            if (snippets == null) throw new ArgumentNullException("snippets");
+            FormBorderStyle = FormBorderStyle.FixedSingle;
+            StartPosition = FormStartPosition.Manual;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ControlBox = false;
+            ShowInTaskbar = false;
+            KeyPreview = true;
+
+            IList<SnippetMenuEntry> entries = SnippetMenuEntry.Create(snippets);
+            int visibleItems = Math.Min(entries.Count, 12);
+            ClientSize = new Size(310, visibleItems * ItemHeight + 4);
             list = new ListBox
             {
+                BorderStyle = BorderStyle.None,
                 Dock = DockStyle.Fill,
-                DisplayMember = "Name",
-                DataSource = snippets
+                DrawMode = DrawMode.OwnerDrawFixed,
+                ItemHeight = ItemHeight,
+                IntegralHeight = false,
+                DataSource = entries
             };
-            var buttons = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Bottom,
-                Height = 46,
-                FlowDirection = FlowDirection.RightToLeft,
-                Padding = new Padding(6)
-            };
-            var cancel = new Button
-            {
-                Text = "Abbrechen",
-                Width = 90,
-                DialogResult = DialogResult.Cancel
-            };
-            var insert = new Button
-            {
-                Text = "Einfügen",
-                Width = 90,
-                DialogResult = DialogResult.OK,
-                Enabled = snippets.Count > 0
-            };
-            list.DoubleClick += delegate
-            {
-                if (SelectedSnippet != null)
-                {
-                    DialogResult = DialogResult.OK;
-                    Close();
-                }
-            };
-            buttons.Controls.AddRange(new Control[] { cancel, insert });
+            list.DrawItem += DrawEntry;
+            list.MouseUp += ActivateMouseEntry;
+            list.KeyDown += HandleListKey;
+            list.SelectedIndexChanged += SkipDisabledEntry;
             Controls.Add(list);
-            Controls.Add(buttons);
-            AcceptButton = insert;
-            CancelButton = cancel;
+            SelectFirstEnabledEntry();
         }
 
-        public Snippet SelectedSnippet
+        public SnippetMenuChoice Choose(IWin32Window owner)
         {
-            get { return list.SelectedItem as Snippet; }
+            if (owner == null) throw new ArgumentNullException("owner");
+            Location = SnippetPopupPlacement.Calculate(owner.Handle, Size);
+            Log.Trace("ui.SnippetMenuPopup", "before");
+            Show(owner);
+            while (Visible)
+            {
+                Application.DoEvents();
+                if (Visible) Thread.Sleep(10);
+            }
+            Log.Trace("ui.SnippetMenuPopup", "after-" + choice.Kind);
+            return choice;
         }
 
-        public bool TrySelect(IWin32Window owner, out Snippet snippet)
+        protected override void OnDeactivate(EventArgs e)
         {
-            Log.Trace("ui.InsertDialog", "before");
-            DialogResult result = ShowDialog(owner);
-            Log.Trace("ui.InsertDialog", "after-" + result);
-            snippet = result == DialogResult.OK ? SelectedSnippet : null;
-            return result == DialogResult.OK;
+            base.OnDeactivate(e);
+            if (Visible)
+            {
+                choice = SnippetMenuChoice.Cancel();
+                Close();
+            }
+        }
+
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (keyData == Keys.Escape)
+            {
+                choice = SnippetMenuChoice.Cancel();
+                Close();
+                return true;
+            }
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        private void DrawEntry(object sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0) return;
+            var entry = (SnippetMenuEntry)list.Items[e.Index];
+            e.DrawBackground();
+            if (entry.Kind == SnippetMenuEntryKind.Separator)
+            {
+                int y = e.Bounds.Top + e.Bounds.Height / 2;
+                using (var pen = new Pen(SystemColors.ControlDark))
+                {
+                    e.Graphics.DrawLine(
+                        pen,
+                        e.Bounds.Left + 8,
+                        y,
+                        e.Bounds.Right - 8,
+                        y);
+                }
+                return;
+            }
+
+            Color color = entry.Enabled
+                ? e.ForeColor
+                : SystemColors.GrayText;
+            TextRenderer.DrawText(
+                e.Graphics,
+                entry.Text,
+                e.Font,
+                new Rectangle(
+                    e.Bounds.Left + 10,
+                    e.Bounds.Top,
+                    e.Bounds.Width - 20,
+                    e.Bounds.Height),
+                color,
+                TextFormatFlags.Left |
+                TextFormatFlags.VerticalCenter |
+                TextFormatFlags.EndEllipsis);
+            e.DrawFocusRectangle();
+        }
+
+        private void ActivateMouseEntry(object sender, MouseEventArgs e)
+        {
+            int index = list.IndexFromPoint(e.Location);
+            if (index < 0) return;
+            var entry = (SnippetMenuEntry)list.Items[index];
+            if (!entry.Enabled) return;
+            list.SelectedIndex = index;
+            ActivateSelectedEntry();
+        }
+
+        private void HandleListKey(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode != Keys.Enter) return;
+            ActivateSelectedEntry();
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        }
+
+        private void ActivateSelectedEntry()
+        {
+            var entry = list.SelectedItem as SnippetMenuEntry;
+            if (entry == null || !entry.Enabled) return;
+            choice = entry.Kind == SnippetMenuEntryKind.Manage
+                ? SnippetMenuChoice.Manage()
+                : SnippetMenuChoice.Insert(entry.Snippet);
+            Close();
+        }
+
+        private void SelectFirstEnabledEntry()
+        {
+            for (int index = 0; index < list.Items.Count; index++)
+            {
+                if (((SnippetMenuEntry)list.Items[index]).Enabled)
+                {
+                    list.SelectedIndex = index;
+                    lastEnabledIndex = index;
+                    return;
+                }
+            }
+        }
+
+        private void SkipDisabledEntry(object sender, EventArgs e)
+        {
+            var entry = list.SelectedItem as SnippetMenuEntry;
+            if (entry == null) return;
+            if (entry.Enabled)
+            {
+                lastEnabledIndex = list.SelectedIndex;
+                return;
+            }
+            int selectedIndex = list.SelectedIndex;
+            int replacement = SnippetMenuEntry.FindEnabledIndex(
+                (IList<SnippetMenuEntry>)list.DataSource,
+                selectedIndex,
+                lastEnabledIndex);
+            if (replacement >= 0)
+            {
+                list.SelectedIndex = replacement;
+            }
+        }
+    }
+
+    internal static class SnippetPopupPlacement
+    {
+        private const int RibbonOffset = 112;
+        private const int RightMargin = 18;
+
+        public static Point Calculate(IntPtr ownerHandle, Size popupSize)
+        {
+            Rectangle ownerBounds;
+            NativeMethods.Rect rect;
+            if (ownerHandle != IntPtr.Zero &&
+                NativeMethods.GetWindowRect(ownerHandle, out rect))
+            {
+                ownerBounds = Rectangle.FromLTRB(
+                    rect.Left,
+                    rect.Top,
+                    rect.Right,
+                    rect.Bottom);
+            }
+            else
+            {
+                ownerBounds = Screen.PrimaryScreen.WorkingArea;
+            }
+
+            Rectangle workingArea = Screen.FromRectangle(ownerBounds).WorkingArea;
+            return Calculate(ownerBounds, workingArea, popupSize);
+        }
+
+        internal static Point Calculate(
+            Rectangle ownerBounds,
+            Rectangle workingArea,
+            Size popupSize)
+        {
+            int x = ownerBounds.Right - popupSize.Width - RightMargin;
+            int y = ownerBounds.Top + RibbonOffset;
+            x = Math.Max(workingArea.Left, Math.Min(x, workingArea.Right - popupSize.Width));
+            y = Math.Max(workingArea.Top, Math.Min(y, workingArea.Bottom - popupSize.Height));
+            return new Point(x, y);
+        }
+
+        private static class NativeMethods
+        {
+            [StructLayout(LayoutKind.Sequential)]
+            internal struct Rect
+            {
+                public int Left;
+                public int Top;
+                public int Right;
+                public int Bottom;
+            }
+
+            [DllImport("user32.dll")]
+            [return: MarshalAs(UnmanagedType.Bool)]
+            internal static extern bool GetWindowRect(
+                IntPtr windowHandle,
+                out Rect rect);
         }
     }
 

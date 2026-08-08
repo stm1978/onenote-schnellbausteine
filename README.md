@@ -50,9 +50,10 @@ Gespeicherte Schnellbausteine bleiben dabei erhalten.
 2. Im Text-Kontextmenü **Als Schnellbaustein speichern...** wählen und einen
    eindeutigen Namen eingeben. Bei Namenskonflikten wird explizit nachgefragt,
    ob überschrieben oder ein anderer Name verwendet werden soll.
-3. Im Register **Start** in der Gruppe **Schnellbausteine** auf
-   **Einfügen...** klicken und den alphabetisch sortierten Eintrag wählen.
-4. **Verwalten...** benennt Einträge um oder löscht sie nach Bestätigung.
+3. Im Register **Start** auf **Schnellbausteine** klicken und den gewünschten,
+   alphabetisch sortierten Eintrag im kompakten Menü wählen. Unter dem Trennstrich
+   öffnet **Schnellbausteine verwalten** die bestehende Verwaltung zum Umbenennen
+   oder Löschen nach Bestätigung.
 
 Beim Einfügen ersetzt ein Baustein markierten Text wie in Word. Reine
 Textfragmente werden direkt in den Lauf eingefügt. Blockinhalte (Listen,
@@ -63,6 +64,17 @@ Absatz eingefügt; der Spezialinhalt bleibt unverändert. Die Cursor- oder
 Auswahlmarkierung wird vor dem Öffnen des Auswahlfensters zusammen mit der
 Seiten-XML erfasst. Fehlt sie oder ist sie mehrdeutig, bricht das Add-in sichtbar
 ab, statt an einer geratenen Outline-Position einzufügen.
+
+Das Schnellbaustein-Menü lässt sich mit Pfeiltasten und Eingabetaste bedienen;
+Escape oder ein Klick außerhalb schließt es ohne Änderung. Da Office keine
+verlässlichen Koordinaten einzelner Ribbon-Schaltflächen bereitstellt, erscheint
+es stabil unterhalb des Ribbonbereichs an der oberen rechten Kante des
+OneNote-Fensters. Dafür werden weder UI Automation noch Bildschirminhalte
+ausgelesen.
+
+Ist der Ziel-Textcontainer schmaler als der gespeicherte Baustein, verbreitert das
+Add-in nur diesen Container auf die gespeicherte Mindestbreite. Breitere Container
+werden niemals verkleinert; Höhe, Position und andere Outlines bleiben unverändert.
 
 ## Gespeicherte Daten
 
@@ -78,7 +90,9 @@ Dateinamen verwendet. Schreibvorgänge erfolgen über eine temporäre Datei im
 gleichen Verzeichnis und anschließendes atomisches Ersetzen. Bilder werden als
 Base64-Daten im Fragment gespeichert. OneNote-`TagDef`- und
 `QuickStyleDef`-Abhängigkeiten werden mitgespeichert und beim Einfügen auf die
-Zielseite abgebildet.
+Zielseite abgebildet. Neue Fragmente speichern außerdem die aus Outline, Tabelle
+oder Bild abgeleitete Mindestbreite kulturunabhängig. Bestehende Fragmente ohne
+diese optionale Angabe bleiben lesbar und verändern die Zielbreite nicht.
 
 ## Einschränkungen
 
@@ -166,9 +180,12 @@ pro Aktion erzeugt und explizit freigegeben; das von `OnConnection` gelieferte
 Application-Objekt wird nicht dauerhaft gehalten. Ribbon-Aktionen geben sofort
 an OneNote zurück. OneNote-COM-Aufrufe und WinForms-Dialoge laufen anschließend
 auf einem eigenen STA-Thread mit Windows-Message-Pump; Dialoge gehören dabei zum
-aktiven OneNote-Hauptfenster. Beim Einfügen wird die mit
-`piBinaryDataSelection` gelesene Seite vor dem Öffnen des Auswahlfensters
+aktiven OneNote-Hauptfenster. Der einzelne Ribbon-Button verwendet bewusst kein
+Office-`dynamicMenu`: Bei vorhandenen Bausteinen wird die mit
+`piBinaryDataSelection` gelesene Seite vor dem Öffnen des kompakten Menüs
 verankert und nach der Auswahl genau dieses unveränderte XML-Abbild aktualisiert.
+Die Verwaltung löst danach keinen weiteren Selection-Lesevorgang aus; im leeren
+Zustand öffnet sich das Menü vollständig ohne Selection-Snapshot.
 Der dabei erfasste `lastModifiedTime`-Wert verhindert, dass zwischenzeitliche
 Änderungen aus einem anderen Fenster oder durch Synchronisierung überschrieben
 werden; in diesem Fall bricht OneNote das Update sichtbar ab. Das aktualisierte
@@ -177,9 +194,11 @@ nach dem eingefügten Inhalt. Nach einem erfolgreichen Update aktiviert das
 Add-in nur noch best-effort das zuvor erfasste OneNote-Hauptfenster. Es verwendet
 bewusst keine `NavigateTo`-Editornavigation, da OneNote dabei nach einem Insert
 abstürzen kann. Solange OneNote keine sichere Editorfokus-API bereitstellt, kann
-zum Weitertippen nach einem Ribbon-Insert ein Klick auf die Seite erforderlich
-sein. Ein Aktivierungsfehler wird ausschließlich protokolliert und blockiert den
-erfolgreichen Insert nicht durch einen modalen Hinweis.
+zum sofortigen Weitertippen nach einem Ribbon-Insert weiterhin ein Klick auf die
+Seite erforderlich sein. Die Containerverbreiterung ändert ausschließlich die
+Breite und stellt keinen Editorfokus her. Ein Aktivierungsfehler wird ausschließlich
+protokolliert und blockiert den erfolgreichen Insert nicht durch einen modalen
+Hinweis.
 Damit folgt der Einfügepfad wie OneMores öffentlich beschriebenes
 `SelectionRange`-/`PageEditor.InsertOrReplace`-Muster einer expliziten
 Selection-Range statt einer globalen Outline-Suche, ohne OneMore-Code zu
