@@ -58,7 +58,7 @@ namespace Schnellbausteine.AddIn
         {
             this.repository = repository;
             this.changed = changed;
-            Text = "Schnellbausteine verwalten";
+            Text = "OneNote Schnellbausteine verwalten";
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(500, 330);
             Size = new Size(600, 420);

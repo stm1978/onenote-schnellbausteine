@@ -430,7 +430,7 @@ namespace Schnellbausteine.AddIn
                     new XElement(
                         Ribbon + "button",
                         new XAttribute("id", "sqManage_" + generation),
-                        new XAttribute("label", "Schnellbausteine verwalten"),
+                        new XAttribute("label", "OneNote Schnellbausteine verwalten"),
                         new XAttribute("onAction", "ManageSnippets")));
                 snapshots[menuControlId] = nextSnapshot;
                 valid = true;
