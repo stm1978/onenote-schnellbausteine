@@ -167,8 +167,6 @@ namespace Schnellbausteine.Tests
                     menuAddIn,
                     insertSnippetActionField,
                     XDocument.Parse(menuContentXml));
-                bool visibilityCallback = (bool)type.GetMethod("CanSaveSelection").Invoke(
-                    addIn, new object[] { null });
                 string ribbonXml = (string)type.GetMethod("GetCustomUI").Invoke(
                     addIn, new object[] { "Microsoft.OneNote" });
                 XNamespace ribbonNamespace =
@@ -185,14 +183,32 @@ namespace Schnellbausteine.Tests
                 XElement separator = menuItems.Skip(1).FirstOrDefault();
                 XElement manageButton = menuItems.Skip(2).FirstOrDefault();
                 XElement contextMenus = ribbon.Root.Element(ribbonNamespace + "contextMenus");
-                XElement textMenu = contextMenus == null
-                    ? null
-                    : contextMenus.Elements(ribbonNamespace + "contextMenu").SingleOrDefault(
-                        element => (string)element.Attribute("idMso") == "ContextMenuText");
-                XElement saveButton = textMenu == null
-                    ? null
-                    : textMenu.Elements(ribbonNamespace + "button").SingleOrDefault(
-                        element => (string)element.Attribute("id") == "sqSaveSelection");
+                string[] contextMenuIds =
+                {
+                    "ContextMenuText",
+                    "ContextMenuOutlineElementHandle",
+                    "ContextMenuInkDrawing",
+                    "ContextMenuLassoSelection"
+                };
+                string[] saveButtonIds =
+                {
+                    "sqSaveSelectionText",
+                    "sqSaveSelectionOutline",
+                    "sqSaveSelectionInk",
+                    "sqSaveSelectionLasso"
+                };
+                XElement[] contextMenuElements = contextMenus == null
+                    ? new XElement[0]
+                    : contextMenuIds.Select(id => contextMenus
+                        .Elements(ribbonNamespace + "contextMenu")
+                        .SingleOrDefault(element => (string)element.Attribute("idMso") == id))
+                        .ToArray();
+                XElement[] saveButtons = contextMenuElements
+                    .Select((menuElement, index) => menuElement == null
+                        ? null
+                        : menuElement.Elements(ribbonNamespace + "button").SingleOrDefault(
+                            element => (string)element.Attribute("id") == saveButtonIds[index]))
+                    .ToArray();
 
                 if (mainMenu == null ||
                     ribbonGroup.Elements().Count() != 1 ||
@@ -219,13 +235,16 @@ namespace Schnellbausteine.Tests
                     ribbon.Descendants(ribbonNamespace + "gallery").Any() ||
                     ribbon.Descendants(ribbonNamespace + "menu").Any() ||
                     ribbon.Descendants(ribbonNamespace + "form").Any() ||
-                    saveButton == null ||
-                    (string)saveButton.Attribute("label") != "Als Schnellbaustein speichern..." ||
-                    (string)saveButton.Attribute("imageMso") !=
-                        "SaveSelectionToQuickPartGallery" ||
-                    (string)saveButton.Attribute("onAction") != "SaveSelection" ||
-                    (string)saveButton.Attribute("insertBeforeMso") != "Cut" ||
-                    saveButton.Attribute("getVisible") != null ||
+                    contextMenuElements.Any(element => element == null) ||
+                    saveButtons.Any(button => button == null) ||
+                    saveButtons.Any(button =>
+                        (string)button.Attribute("label") != "Als Schnellbaustein speichern..." ||
+                        (string)button.Attribute("imageMso") !=
+                            "SaveSelectionToQuickPartGallery" ||
+                        (string)button.Attribute("onAction") != "SaveSelection" ||
+                        button.Attribute("getVisible") != null ||
+                        button.Attribute("getEnabled") != null) ||
+                    (string)saveButtons[0].Attribute("insertBeforeMso") != "Cut" ||
                     applicationField == null ||
                     applicationField.FieldType != applicationAdapterInterfaceType ||
                     piaApplicationField == null ||
@@ -292,8 +311,7 @@ namespace Schnellbausteine.Tests
                         .Any(method => method.Name == "NavigateTo") ||
                     hasDynamicCallSites ||
                     referencesDynamicBinder ||
-                    !visibilityCallback ||
-                    type.GetMethod("CanSaveSelection") == null ||
+                    type.GetMethod("CanSaveSelection") != null ||
                     selectionMethod == null ||
                     type.GetMethod("SaveSelection") == null ||
                     type.GetMethod("GetSnippetCount") != null ||

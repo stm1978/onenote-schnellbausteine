@@ -20,6 +20,16 @@ namespace Schnellbausteine.Tests
             SelectionExtractsRichContentAndDependencies,
             SelectionExtractionPrunesPartialParagraphSiblings,
             SelectionExtractionPrunesPartialTableSiblings,
+            WholeTableSelectionIsCaptured,
+            CompleteRowsAreCapturedCompactly,
+            CompleteColumnsAreCapturedCompactly,
+            RectangularCellsRoundTripAtTextAnchor,
+            InvalidTableSelectionsAreRejected,
+            InlineInkDataIsCapturedLosslessly,
+            InkCallbackIsMaterializedAndMetadataRemoved,
+            InvalidInkBinaryDataIsRejected,
+            TopLevelInkRoundTripsAtCellAnchor,
+            MixedAndMultipleInkSelectionsAreRejected,
             SelectionStoresOutlineMinimumWidth,
             SelectionFallsBackToTableAndImageWidths,
             EmptyCursorIsNotASelection,
@@ -179,6 +189,268 @@ namespace Schnellbausteine.Tests
                     "</one:Row></one:Table></one:OE>",
                     "220"),
                 snippet);
+        }
+
+        private static void WholeTableSelectionIsCaptured()
+        {
+            XDocument page = Page(
+                "<one:Outline selected=\"partial\"><one:Size width=\"500\" height=\"80\"/>" +
+                "<one:OEChildren><one:OE selected=\"partial\"><one:Table selected=\"all\" style=\"grid\">" +
+                TableColumns() + TableRows(string.Empty) +
+                "</one:Table></one:OE></one:OEChildren></one:Outline>");
+
+            XDocument snippet = OneNoteXml.ExtractSelection(page, null);
+
+            XElement table = snippet.Descendants(OneNoteXml.One + "Table").Single();
+            Equal("grid", (string)table.Attribute("style"));
+            Equal("A1,B1,A2,B2,C1,C2", string.Join(",",
+                table.Descendants(OneNoteXml.One + "T").Select(text => text.Value)));
+            Equal("500", (string)snippet.Root
+                .Element(OneNoteXml.Snippet + "Geometry").Attribute("minWidth"));
+            AssertTableSnippetRoundTrip(snippet, "A1,B1,A2,B2,C1,C2", 3);
+        }
+
+        private static void CompleteRowsAreCapturedCompactly()
+        {
+            XDocument page = TableSelectionPage(
+                " selected=\"partial\"",
+                " selected=\"all\"",
+                string.Empty,
+                string.Empty);
+
+            XDocument snippet = OneNoteXml.ExtractSelection(page, null);
+            XElement table = snippet.Descendants(OneNoteXml.One + "Table").Single();
+
+            Equal(1, table.Elements(OneNoteXml.One + "Row").Count());
+            Equal("A1,B1,A2", string.Join(",",
+                table.Descendants(OneNoteXml.One + "T").Select(text => text.Value)));
+            Equal(3, table.Element(OneNoteXml.One + "Columns")
+                .Elements(OneNoteXml.One + "Column").Count());
+            AssertTableSnippetRoundTrip(snippet, "A1,B1,A2", 3);
+        }
+
+        private static void CompleteColumnsAreCapturedCompactly()
+        {
+            XDocument page = TableSelectionPage(
+                " selected=\"partial\"",
+                " selected=\"partial\"",
+                " selected=\"all\"",
+                " selected=\"all\"");
+
+            XDocument snippet = OneNoteXml.ExtractSelection(page, null);
+            XElement table = snippet.Descendants(OneNoteXml.One + "Table").Single();
+            List<XElement> columns = table.Element(OneNoteXml.One + "Columns")
+                .Elements(OneNoteXml.One + "Column").ToList();
+
+            Equal("0", (string)columns[0].Attribute("index"));
+            Equal("1", (string)columns[1].Attribute("index"));
+            Equal("110", (string)columns[0].Attribute("width"));
+            Equal("120", (string)columns[1].Attribute("width"));
+            Equal("B1,A2,C1,C2", string.Join(",",
+                table.Descendants(OneNoteXml.One + "T").Select(text => text.Value)));
+            AssertTableSnippetRoundTrip(snippet, "B1,A2,C1,C2", 2);
+        }
+
+        private static void RectangularCellsRoundTripAtTextAnchor()
+        {
+            XDocument source = Page(
+                "<one:TagDef index=\"4\" type=\"0\" symbol=\"3\"/>" +
+                "<one:Outline><one:OEChildren><one:OE selected=\"partial\">" +
+                "<one:Table selected=\"partial\">" + TableColumns() +
+                "<one:Row selected=\"partial\">" +
+                TableCell("A1", string.Empty) +
+                TableCellWithImage("B1", " selected=\"all\"") +
+                TableCell("A2", " selected=\"all\"") +
+                "</one:Row><one:Row selected=\"partial\">" +
+                TableCell("B2", string.Empty) +
+                TableCell("C1", " selected=\"all\"") +
+                TableCellWithTag("C2", " selected=\"all\"") +
+                "</one:Row></one:Table></one:OE></one:OEChildren></one:Outline>");
+            XDocument snippet = OneNoteXml.ExtractSelection(
+                source,
+                callback => callback == "cell-image" ? "CELLBASE64" : null);
+            XDocument target = Page(
+                "<one:Outline><one:Size width=\"50\" height=\"20\"/><one:OEChildren><one:OE>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+
+            OneNoteInsertionResult result = OneNoteXml.InsertAtSelection(target, snippet);
+
+            Equal("BlockRange", result.Strategy);
+            Equal("B1,A2,C1,C2", string.Join(",",
+                target.Descendants(OneNoteXml.One + "T")
+                    .Where(text => text.Value.Length > 0)
+                    .Select(text => text.Value)));
+            Equal("CELLBASE64", target.Descendants(OneNoteXml.One + "Data").Single().Value);
+            Equal(1, target.Descendants(OneNoteXml.One + "Tag").Count());
+            Equal(2, target.Descendants(OneNoteXml.One + "Column").Count());
+            Equal("#FFF2CC", (string)target.Descendants(OneNoteXml.One + "Cell")
+                .First().Attribute("shadingColor"));
+            AssertSinglePostInsertCaret(target);
+        }
+
+        private static void InvalidTableSelectionsAreRejected()
+        {
+            XDocument nonRectangular = TableSelectionPage(
+                " selected=\"partial\"",
+                " selected=\"partial\"",
+                " selected=\"all\"",
+                string.Empty);
+            nonRectangular.Descendants(OneNoteXml.One + "Cell").Last()
+                .SetAttributeValue("selected", "all");
+            Throws<InvalidOperationException>(() =>
+                OneNoteXml.ExtractSelection(nonRectangular, null));
+
+            XDocument mixed = TableSelectionPage(
+                " selected=\"partial\"",
+                " selected=\"partial\"",
+                " selected=\"all\"",
+                " selected=\"all\"");
+            mixed.Descendants(OneNoteXml.One + "OE").First()
+                .AddBeforeSelf(new XElement(OneNoteXml.One + "OE",
+                    new XElement(OneNoteXml.One + "T",
+                        new XAttribute("selected", "all"),
+                        new XCData("extern"))));
+            Throws<InvalidOperationException>(() => OneNoteXml.ExtractSelection(mixed, null));
+
+            XDocument multi = Page(
+                "<one:Outline><one:OEChildren><one:OE><one:Table selected=\"all\">" +
+                TableColumns() + TableRows(string.Empty) + "</one:Table></one:OE>" +
+                "<one:OE><one:Table selected=\"all\">" +
+                TableColumns() + TableRows(string.Empty) + "</one:Table></one:OE>" +
+                "</one:OEChildren></one:Outline>");
+            Throws<InvalidOperationException>(() => OneNoteXml.ExtractSelection(multi, null));
+
+            XDocument extraPartialContent = TableSelectionPage(
+                " selected=\"partial\"",
+                " selected=\"partial\"",
+                " selected=\"all\"",
+                " selected=\"all\"");
+            extraPartialContent.Descendants(OneNoteXml.One + "Cell").First()
+                .Descendants(OneNoteXml.One + "T").Single()
+                .SetAttributeValue("selected", "all");
+            Throws<InvalidOperationException>(() =>
+                OneNoteXml.ExtractSelection(extraPartialContent, null));
+        }
+
+        private static void InlineInkDataIsCapturedLosslessly()
+        {
+            const string data = "AQIDBAUGBwg=";
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE selected=\"partial\">" +
+                "<one:InkDrawing selected=\"all\" objectID=\"ink-object\" inkOrigin=\"2,3\">" +
+                "<one:Size width=\"140.5\" height=\"50\"/><one:ShapeInfo type=\"0\"/>" +
+                "<one:Data>" + data + "</one:Data></one:InkDrawing>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+
+            XDocument snippet = OneNoteXml.ExtractSelection(page, null);
+            XElement ink = snippet.Descendants(OneNoteXml.One + "InkDrawing").Single();
+
+            Equal(data, ink.Element(OneNoteXml.One + "Data").Value);
+            Equal("2,3", (string)ink.Attribute("inkOrigin"));
+            Equal("140.5", (string)ink.Element(OneNoteXml.One + "Size").Attribute("width"));
+            Assert(ink.Element(OneNoteXml.One + "ShapeInfo") != null, "ShapeInfo fehlt.");
+            Assert(!ink.Attributes("objectID").Any(), "objectID wurde nicht entfernt.");
+        }
+
+        private static void InkCallbackIsMaterializedAndMetadataRemoved()
+        {
+            int calls = 0;
+            XDocument page = Page(
+                "<one:InkDrawing selected=\"all\" callbackID=\"ink-callback\" objectID=\"old\" " +
+                "lastModifiedTime=\"2026-08-08T10:00:00Z\" inkOrigin=\"4,5\">" +
+                "<one:Position x=\"70\" y=\"80\" z=\"1\"/><one:Size width=\"90\" height=\"40\"/>" +
+                "<one:File path=\"C:\\\\unstable.isf\"/></one:InkDrawing>");
+
+            XDocument snippet = OneNoteXml.ExtractSelection(page, callback =>
+            {
+                calls++;
+                Equal("ink-callback", callback);
+                return "opaque-base64";
+            });
+            XElement ink = snippet.Descendants(OneNoteXml.One + "InkDrawing").Single();
+
+            Equal(1, calls);
+            Equal("opaque-base64", ink.Element(OneNoteXml.One + "Data").Value);
+            Assert(ink.Attribute("callbackID") == null, "callbackID wurde persistiert.");
+            Assert(ink.Element(OneNoteXml.One + "File") == null, "Externer Ink-Dateipfad wurde persistiert.");
+            Assert(ink.Element(OneNoteXml.One + "Position") == null, "Seitenposition wurde persistiert.");
+            Assert(!ink.Attributes("lastModifiedTime").Any(), "lastModifiedTime wurde persistiert.");
+        }
+
+        private static void InvalidInkBinaryDataIsRejected()
+        {
+            XDocument callback = Page(
+                "<one:InkDrawing selected=\"all\" callbackID=\"ink\"/>");
+            Throws<InvalidOperationException>(() => OneNoteXml.ExtractSelection(callback, null));
+            Throws<InvalidOperationException>(() =>
+                OneNoteXml.ExtractSelection(callback, value => string.Empty));
+            Throws<InvalidDataException>(() =>
+                OneNoteXml.ExtractSelection(callback, value =>
+                {
+                    throw new InvalidDataException("resolver failed");
+                }));
+
+            XDocument missing = Page("<one:InkDrawing selected=\"all\"><one:File path=\"C:\\\\only.isf\"/></one:InkDrawing>");
+            Throws<InvalidOperationException>(() => OneNoteXml.ExtractSelection(missing, value => "unused"));
+
+            XDocument partial = Page(
+                "<one:InkDrawing selected=\"partial\"><one:Data>AQID</one:Data></one:InkDrawing>");
+            Throws<InvalidOperationException>(() => OneNoteXml.ExtractSelection(partial, null));
+
+            XDocument ancestorOnly = Page(
+                "<one:Outline><one:OEChildren><one:OE selected=\"all\">" +
+                "<one:InkDrawing><one:Position x=\"1\" y=\"2\"/><one:Data>AQID</one:Data>" +
+                "</one:InkDrawing></one:OE></one:OEChildren></one:Outline>");
+            Throws<InvalidOperationException>(() => OneNoteXml.ExtractSelection(ancestorOnly, null));
+        }
+
+        private static void TopLevelInkRoundTripsAtCellAnchor()
+        {
+            XDocument snippet = OneNoteXml.ExtractSelection(
+                Page("<one:InkDrawing selected=\"all\"><one:Size width=\"80\" height=\"20\"/>" +
+                    "<one:Data>AQID</one:Data></one:InkDrawing>"),
+                null);
+            XDocument target = Page(
+                "<one:Outline><one:OEChildren><one:OE><one:Table><one:Columns>" +
+                "<one:Column index=\"0\" width=\"100\"/></one:Columns><one:Row>" +
+                "<one:Cell selected=\"all\"><one:OEChildren><one:OE><one:T><![CDATA[alt]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Cell></one:Row></one:Table></one:OE>" +
+                "</one:OEChildren></one:Outline>");
+
+            OneNoteInsertionResult result = OneNoteXml.InsertAtSelection(target, snippet);
+
+            Equal("ReplaceTableCell", result.Strategy);
+            Equal(1, target.Descendants(OneNoteXml.One + "InkDrawing").Count());
+            Equal("AQID", target.Descendants(OneNoteXml.One + "Data").Single().Value);
+            AssertSinglePostInsertCaret(target);
+        }
+
+        private static void MixedAndMultipleInkSelectionsAreRejected()
+        {
+            XDocument mixed = Page(
+                "<one:Outline><one:OEChildren><one:OE>" +
+                "<one:InkDrawing selected=\"all\"><one:Data>AQID</one:Data></one:InkDrawing>" +
+                "<one:T selected=\"all\"><![CDATA[text]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+            Throws<InvalidOperationException>(() => OneNoteXml.ExtractSelection(mixed, null));
+
+            XDocument multiple = Page(
+                "<one:InkDrawing selected=\"all\"><one:Data>AQID</one:Data></one:InkDrawing>" +
+                "<one:InkDrawing selected=\"all\"><one:Data>BAUG</one:Data></one:InkDrawing>");
+            Throws<InvalidOperationException>(() => OneNoteXml.ExtractSelection(multiple, null));
+
+            XDocument ink = OneNoteXml.ExtractSelection(
+                Page("<one:InkDrawing selected=\"all\"><one:Data>AQID</one:Data></one:InkDrawing>"),
+                null);
+            XDocument specialAnchor = Page(
+                "<one:Outline><one:OEChildren><one:OE>" +
+                "<one:T selected=\"all\"><![CDATA[<a href=\"x\">Link</a>]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+            XDocument before = new XDocument(specialAnchor);
+            Throws<InvalidOperationException>(() =>
+                OneNoteXml.InsertAtSelection(specialAnchor, ink));
+            XmlEqual(before, specialAnchor);
         }
 
         private static void SelectionStoresOutlineMinimumWidth()
@@ -1075,6 +1347,91 @@ namespace Schnellbausteine.Tests
             Throws<InvalidOperationException>(() =>
                 OneNoteXml.InsertAtSelection(page, Fragment("<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>")));
             XmlEqual(before, page);
+        }
+
+        private static XDocument TableSelectionPage(
+            string tableSelection,
+            string firstRowSelection,
+            string firstRowCellSelection,
+            string secondRowCellSelection)
+        {
+            return Page(
+                "<one:Outline selected=\"partial\"><one:OEChildren><one:OE selected=\"partial\">" +
+                "<one:Table" + tableSelection + " style=\"grid\">" + TableColumns() +
+                "<one:Row" + firstRowSelection + ">" +
+                TableCell("A1", string.Empty) +
+                TableCell("B1", firstRowCellSelection) +
+                TableCell("A2", firstRowCellSelection) +
+                "</one:Row><one:Row" +
+                (secondRowCellSelection.Length == 0 ? string.Empty : " selected=\"partial\"") +
+                ">" +
+                TableCell("B2", string.Empty) +
+                TableCell("C1", secondRowCellSelection) +
+                TableCell("C2", secondRowCellSelection) +
+                "</one:Row></one:Table></one:OE></one:OEChildren></one:Outline>");
+        }
+
+        private static string TableColumns()
+        {
+            return "<one:Columns>" +
+                "<one:Column index=\"0\" width=\"100\"/>" +
+                "<one:Column index=\"1\" width=\"110\"/>" +
+                "<one:Column index=\"2\" width=\"120\"/>" +
+                "</one:Columns>";
+        }
+
+        private static string TableRows(string selection)
+        {
+            return "<one:Row" + selection + ">" +
+                TableCell("A1", string.Empty) +
+                TableCell("B1", string.Empty) +
+                TableCell("A2", string.Empty) +
+                "</one:Row><one:Row" + selection + ">" +
+                TableCell("B2", string.Empty) +
+                TableCell("C1", string.Empty) +
+                TableCell("C2", string.Empty) +
+                "</one:Row>";
+        }
+
+        private static string TableCell(string text, string selection)
+        {
+            return "<one:Cell" + selection + "><one:OEChildren><one:OE>" +
+                "<one:T><![CDATA[" + text + "]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Cell>";
+        }
+
+        private static string TableCellWithImage(string text, string selection)
+        {
+            return "<one:Cell" + selection + " shadingColor=\"#FFF2CC\"><one:OEChildren><one:OE>" +
+                "<one:T><![CDATA[" + text + "]]></one:T>" +
+                "<one:Image callbackID=\"cell-image\" format=\"png\"/>" +
+                "</one:OE></one:OEChildren></one:Cell>";
+        }
+
+        private static string TableCellWithTag(string text, string selection)
+        {
+            return "<one:Cell" + selection + "><one:OEChildren><one:OE>" +
+                "<one:Tag index=\"4\"/><one:T><![CDATA[" + text + "]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Cell>";
+        }
+
+        private static void AssertTableSnippetRoundTrip(
+            XDocument snippet,
+            string expectedText,
+            int expectedColumns)
+        {
+            XDocument target = Page(
+                "<one:Outline><one:OEChildren><one:OE>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+            OneNoteInsertionResult result = OneNoteXml.InsertAtSelection(target, snippet);
+            Equal("BlockRange", result.Strategy);
+            Equal(expectedText, string.Join(",",
+                target.Descendants(OneNoteXml.One + "T")
+                    .Where(text => text.Value.Length > 0)
+                    .Select(text => text.Value)));
+            Equal(expectedColumns, target.Descendants(OneNoteXml.One + "Column").Count());
+            AssertSinglePostInsertCaret(target);
         }
 
         private static XDocument Page(string content)

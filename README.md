@@ -47,9 +47,10 @@ Gespeicherte Schnellbausteine bleiben dabei erhalten.
 ## Bedienung
 
 1. Inhalt auf einer OneNote-Seite markieren.
-2. Im Text-Kontextmenü **Als Schnellbaustein speichern...** wählen und einen
-   eindeutigen Namen eingeben. Bei Namenskonflikten wird explizit nachgefragt,
-   ob überschrieben oder ein anderer Name verwendet werden soll.
+2. Im Kontextmenü von Text, Outline-Handle, Tabelle oder Freihandauswahl
+   **Als Schnellbaustein speichern...** wählen und einen eindeutigen Namen
+   eingeben. Bei Namenskonflikten wird explizit nachgefragt, ob überschrieben
+   oder ein anderer Name verwendet werden soll.
 3. Im Register **Start** auf **Schnellbausteine** klicken und den gewünschten,
    alphabetisch sortierten direkten nativen Office-Menüeintrag wählen. Unter der
    nativen Trennlinie öffnet **Schnellbausteine verwalten** die bestehende
@@ -93,8 +94,12 @@ Dateinamen verwendet. Schreibvorgänge erfolgen über eine temporäre Datei im
 gleichen Verzeichnis und anschließendes atomisches Ersetzen. Bilder werden als
 Base64-Daten im Fragment gespeichert. OneNote-`TagDef`- und
 `QuickStyleDef`-Abhängigkeiten werden mitgespeichert und beim Einfügen auf die
-Zielseite abgebildet. Neue Fragmente speichern außerdem die aus Outline, Tabelle
-oder Bild abgeleitete Mindestbreite kulturunabhängig. Bestehende Fragmente ohne
+Zielseite abgebildet. Neue Fragmente speichern außerdem die aus Outline, Tabelle,
+Bild oder Freihandzeichnung abgeleitete Mindestbreite kulturunabhängig.
+Vollständig markierte Freihandzeichnungen werden mit `Size`, `ShapeInfo`,
+`inkOrigin` und opaken Base64-Daten gespeichert. Eine `callbackID` wird vor dem
+Speichern über OneNote materialisiert; externe `File`-Pfade werden nie
+persistiert. Bestehende Fragmente ohne
 diese optionale Angabe bleiben lesbar und verändern die Zielbreite nicht.
 
 ## Einschränkungen
@@ -103,8 +108,16 @@ diese optionale Angabe bleiben lesbar und verändern die Zielbreite nicht.
   Windows-10-Store-App.
 - Keine Cloud-Synchronisierung, Kategorien, KI, Vorlagen oder Platzhalter.
 - Eingebettete Dateien sind nicht Ziel des MVP. Formatierter Text,
-  Überschriften, Listen, Tabellen, OneNote-Tags/Checkboxen und Bilder werden
-  unterstützt.
+  Überschriften, Listen, OneNote-Tags/Checkboxen, Bilder, ganze Tabellen,
+  vollständige Tabellenzeilen/-spalten, rechteckige Zellbereiche und jeweils
+  genau eine vollständige Freihandzeichnung werden unterstützt.
+- Mehrere Tabellen, nicht rechteckige Zellbereiche, Tabellen mit extern
+  markierten Inhalten sowie gemischte oder mehrere Freihandzeichnungen werden
+  sicher abgelehnt.
+- Eine Lasso-Auswahl wird nicht offline auf einzelne Striche zugeschnitten.
+  Gespeichert wird ausschließlich ein vollständiger `InkDrawing`-Blob, den
+  OneNote selbst in `piBinaryDataSelection` als eigenständige Binärdaten
+  liefert. Fehlen diese Daten, bricht der Speichervorgang sichtbar ab.
 - Hyperlink-/MathML-Spezialcursor werden absichtlich nur an einer sicheren
   Absatzgrenze behandelt, damit kein Inhalt verloren geht.
 
@@ -218,3 +231,13 @@ Selection-Range statt einer globalen Outline-Suche, ohne OneMore-Code zu
 3. **Schnellbausteine verwalten** öffnen, Bausteine umbenennen und löschen sowie
    einen neuen Baustein speichern; nach jedem CRUD-Vorgang die aktualisierte,
    alphabetischen Menüeinträge und den deaktivierten Leerzustand prüfen.
+4. Ganze Tabelle, vollständige Zeilen, vollständige Spalten und einen
+   zusammenhängenden rechteckigen Zellbereich jeweils speichern und an einem
+   Text- sowie Zellanker einfügen; Struktur, Zellformatierung, Inhalte, Bilder,
+   Tags und Spaltenbreiten vergleichen.
+5. Je eine vollständige Stift-, Maus- und Lasso-Auswahl speichern und wieder
+   einfügen. Für jede Auswahl Typ und Anzahl der gelieferten `InkDrawing`-Objekte
+   sowie Binärlänge und Hash vor und nach dem Roundtrip vergleichen.
+6. Bei einer Lasso-Auswahl über Teilstriche ausdrücklich prüfen, ob OneNote
+   eigenständige vollständige Binärdaten liefert. Ohne solchen Blob muss das
+   Add-in ablehnen; ein Cropping einzelner Striche wird nicht behauptet.

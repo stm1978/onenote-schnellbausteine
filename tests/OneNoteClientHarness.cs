@@ -17,6 +17,7 @@ namespace Schnellbausteine.Tests
         {
             public readonly List<string> Calls;
             public Exception UpdateException;
+            public string BinaryData;
 
             public FakeApplication(List<string> calls)
             {
@@ -41,7 +42,8 @@ namespace Schnellbausteine.Tests
 
             public string GetBinaryPageContent(string pageId, string callbackId)
             {
-                throw new NotSupportedException();
+                Calls.Add("binary:" + pageId + ":" + callbackId);
+                return BinaryData;
             }
 
             public void UpdatePageContent(string xml, DateTime expectedLastModifiedTime)
@@ -205,7 +207,8 @@ namespace Schnellbausteine.Tests
                 AttachedThreadsAreDetachedInFinally();
                 MinimizedTargetIsRestoredBeforeActivation();
                 RejectedActivationDoesNotFailInsert();
-                Console.WriteLine("12/12 OneNote-Client-Harness-Tests erfolgreich.");
+                BinaryCallbacksUseCapturedPageOnClientThread();
+                Console.WriteLine("13/13 OneNote-Client-Harness-Tests erfolgreich.");
                 return 0;
             }
             catch (Exception exception)
@@ -480,6 +483,19 @@ namespace Schnellbausteine.Tests
             }
             Contains(calls, "set:100");
             Contains(calls, "bring:100");
+        }
+
+        private static void BinaryCallbacksUseCapturedPageOnClientThread()
+        {
+            var calls = new List<string>();
+            var application = new FakeApplication(calls) { BinaryData = "opaque-data" };
+            using (var client = CreateClient(
+                application,
+                new FakeWindowActivator(calls)))
+            {
+                Equal("opaque-data", client.ReadBinary("ink-callback"));
+            }
+            Equal("binary:page-id:ink-callback", string.Join(",", calls));
         }
 
         private static OneNoteClient CreateClient(

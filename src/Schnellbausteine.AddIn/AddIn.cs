@@ -96,12 +96,6 @@ namespace Schnellbausteine.AddIn
             this.ribbonUi = ribbonUi;
         }
 
-        public bool CanSaveSelection(IRibbonControl control)
-        {
-            Log.Trace("callback.CanSaveSelection", "entry-no-com");
-            return true;
-        }
-
         internal bool HasCurrentSelection()
         {
             Log.Trace("diagnostic.HasCurrentSelection", "entry");

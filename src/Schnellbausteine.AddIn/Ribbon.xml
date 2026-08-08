@@ -12,7 +12,16 @@
   </ribbon>
   <contextMenus>
     <contextMenu idMso="ContextMenuText">
-      <button id="sqSaveSelection" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery" onAction="SaveSelection" insertBeforeMso="Cut"/>
+      <button id="sqSaveSelectionText" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery" onAction="SaveSelection" insertBeforeMso="Cut"/>
+    </contextMenu>
+    <contextMenu idMso="ContextMenuOutlineElementHandle">
+      <button id="sqSaveSelectionOutline" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery" onAction="SaveSelection"/>
+    </contextMenu>
+    <contextMenu idMso="ContextMenuInkDrawing">
+      <button id="sqSaveSelectionInk" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery" onAction="SaveSelection"/>
+    </contextMenu>
+    <contextMenu idMso="ContextMenuLassoSelection">
+      <button id="sqSaveSelectionLasso" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery" onAction="SaveSelection"/>
     </contextMenu>
   </contextMenus>
 </customUI>
