@@ -70,4 +70,8 @@ $surrogateSource = Join-Path $root "tests\SurrogateSmoke.cs"
 & $csc @common /target:exe /platform:$Platform /out:"$output\Schnellbausteine.SurrogateSmoke.exe" /link:"$extensibility" $surrogateSource
 if ($LASTEXITCODE -ne 0) { throw "Surrogate-Test-Kompilierung fehlgeschlagen." }
 
+$addInSmokeSource = Join-Path $root "tests\AddInSmoke.cs"
+& $csc @common /target:exe /platform:$Platform /out:"$output\Schnellbausteine.AddInSmoke.exe" $addInSmokeSource
+if ($LASTEXITCODE -ne 0) { throw "Add-in-Smoke-Test-Kompilierung fehlgeschlagen." }
+
 Write-Host "Build erfolgreich: $output"

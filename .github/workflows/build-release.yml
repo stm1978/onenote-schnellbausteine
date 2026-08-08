@@ -97,11 +97,11 @@ jobs:
 
       - name: Test x86 Setup lifecycle
         shell: powershell
-        run: .\installer\Test-Setup.ps1 -SetupPath "artifacts\setup\Schnellbausteine-Setup-${{ steps.version.outputs.value }}.exe" -Platform x86
+        run: .\installer\Test-Setup.ps1 -SetupPath "artifacts\setup\Schnellbausteine-Setup-${{ steps.version.outputs.value }}.exe" -Platform x86 -SkipHostActivation
 
       - name: Test x64 Setup lifecycle
         shell: powershell
-        run: .\installer\Test-Setup.ps1 -SetupPath "artifacts\setup\Schnellbausteine-Setup-${{ steps.version.outputs.value }}.exe" -Platform x64
+        run: .\installer\Test-Setup.ps1 -SetupPath "artifacts\setup\Schnellbausteine-Setup-${{ steps.version.outputs.value }}.exe" -Platform x64 -SkipHostActivation
 
       - name: Upload Setup artifact
         uses: actions/upload-artifact@v4

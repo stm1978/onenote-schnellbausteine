@@ -125,11 +125,14 @@ Die Build-Ausgaben liegen unter `artifacts\<Plattform>\<Konfiguration>`, Setup
 unter `artifacts\setup`. `Build-Setup.ps1` lädt den offiziell veröffentlichten,
 per SHA-256 fixierten Inno-Setup-Compiler 7.0.2 und baut reproduzierbar beide
 Bitnesses in eine EXE. Die GitHub-Actions-Pipeline führt beide Testsuiten sowie
-stille Installations-, Upgrade-, COM-Surrogate-Lifecycle- und
-Deinstallationstests aus. Bei einem Tag `v*` wird Setup automatisch an ein
-GitHub Release angehängt. `Test-OneNoteStartup.ps1` ist der zusätzliche lokale
-Regressionstest mit einem tatsächlich installierten OneNote Desktop; OneNote
-muss davor vollständig geschlossen sein.
+stille Installations-, Managed-Add-in-/Ribbon-, Registry-, Upgrade- und
+Deinstallationstests aus. Der saubere GitHub-Windows-Runner enthält kein Office
+und kann deshalb keinen echten OneNote- oder Office-COM-Hosttest ersetzen. Der
+vollständige DllHost-Lifecycle läuft lokal standardmäßig in `Test-Setup.ps1`;
+`Test-OneNoteStartup.ps1` ist der zusätzliche Regressionstest mit einem
+tatsächlich installierten OneNote Desktop. OneNote muss davor vollständig
+geschlossen sein. Bei einem Tag `v*` wird Setup automatisch an ein GitHub
+Release angehängt.
 
 Die PowerShell-Skripte bleiben als Entwickler-Fallback verfügbar:
 

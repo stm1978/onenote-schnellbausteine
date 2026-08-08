@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$SetupPath,
     [ValidateSet("x86", "x64")]
-    [string]$Platform
+    [string]$Platform,
+    [switch]$SkipHostActivation
 )
 
 $ErrorActionPreference = "Stop"
@@ -30,6 +31,11 @@ $surrogateSmoke = Join-Path $PSScriptRoot (
     "..\artifacts\$Platform\Release\Schnellbausteine.SurrogateSmoke.exe")
 if (-not (Test-Path $surrogateSmoke)) {
     throw "Surrogate-Lifecycle-Test fehlt: $surrogateSmoke"
+}
+$addInSmoke = Join-Path $PSScriptRoot (
+    "..\artifacts\$Platform\Release\Schnellbausteine.AddInSmoke.exe")
+if (-not (Test-Path $addInSmoke)) {
+    throw "Managed-Add-in-Test fehlt: $addInSmoke"
 }
 if ((Get-AddInSurrogate).Count -ne 0) {
     throw "Ein alter Schnellbausteine-COM-Surrogatprozess lauft noch."
@@ -93,19 +99,31 @@ try {
         $base.Close()
     }
 
-    & $cscript //nologo "$PSScriptRoot\..\tests\ComSmoke.vbs"
-    if ($LASTEXITCODE -ne 0) { throw "COM-/Ribbon-Smoke-Test fehlgeschlagen." }
+    & $addInSmoke $assembly
+    if ($LASTEXITCODE -ne 0) { throw "Managed-Add-in-/Ribbon-Test fehlgeschlagen." }
 
-    & $surrogateSmoke
-    if ($LASTEXITCODE -ne 0) {
-        throw "COM-Surrogate-Lifecycle-Test fehlgeschlagen."
-    }
+    if (-not $SkipHostActivation) {
+        $comOutput = @(& $cscript //nologo "$PSScriptRoot\..\tests\ComSmoke.vbs" 2>&1)
+        $comOutput | ForEach-Object { Write-Host $_ }
+        if ($LASTEXITCODE -ne 0 -or
+            ($comOutput -join [Environment]::NewLine) -notmatch
+                "COM-Aktivierung und Ribbon-Dispatch erfolgreich") {
+            throw "COM-/Ribbon-Smoke-Test fehlgeschlagen."
+        }
 
-    for ($second = 1; $second -le 15 -and (Get-AddInSurrogate).Count -ne 0; $second++) {
-        Start-Sleep -Seconds 1
-    }
-    if ((Get-AddInSurrogate).Count -ne 0) {
-        throw "Der COM-Surrogatprozess wurde nach dem Lifecycle-Test nicht beendet."
+        & $surrogateSmoke
+        if ($LASTEXITCODE -ne 0) {
+            throw "COM-Surrogate-Lifecycle-Test fehlgeschlagen."
+        }
+
+        for ($second = 1;
+            $second -le 15 -and (Get-AddInSurrogate).Count -ne 0;
+            $second++) {
+            Start-Sleep -Seconds 1
+        }
+        if ((Get-AddInSurrogate).Count -ne 0) {
+            throw "Der COM-Surrogatprozess wurde nach dem Lifecycle-Test nicht beendet."
+        }
     }
 
     $upgrade = Start-Process $setup -ArgumentList @(
