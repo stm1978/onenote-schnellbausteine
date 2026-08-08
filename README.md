@@ -64,6 +64,10 @@ Auswahlmarkierung wird vor dem Öffnen des Auswahlfensters zusammen mit der
 Seiten-XML erfasst. Fehlt sie oder ist sie mehrdeutig, bricht das Add-in sichtbar
 ab, statt an einer geratenen Outline-Position einzufügen.
 
+Ist der Ziel-Textcontainer schmaler als der gespeicherte Baustein, verbreitert das
+Add-in nur diesen Container auf die gespeicherte Mindestbreite. Breitere Container
+werden niemals verkleinert; Höhe, Position und andere Outlines bleiben unverändert.
+
 ## Gespeicherte Daten
 
 Alle Daten bleiben lokal unter:
@@ -78,7 +82,9 @@ Dateinamen verwendet. Schreibvorgänge erfolgen über eine temporäre Datei im
 gleichen Verzeichnis und anschließendes atomisches Ersetzen. Bilder werden als
 Base64-Daten im Fragment gespeichert. OneNote-`TagDef`- und
 `QuickStyleDef`-Abhängigkeiten werden mitgespeichert und beim Einfügen auf die
-Zielseite abgebildet.
+Zielseite abgebildet. Neue Fragmente speichern außerdem die aus Outline, Tabelle
+oder Bild abgeleitete Mindestbreite kulturunabhängig. Bestehende Fragmente ohne
+diese optionale Angabe bleiben lesbar und verändern die Zielbreite nicht.
 
 ## Einschränkungen
 
@@ -177,9 +183,11 @@ nach dem eingefügten Inhalt. Nach einem erfolgreichen Update aktiviert das
 Add-in nur noch best-effort das zuvor erfasste OneNote-Hauptfenster. Es verwendet
 bewusst keine `NavigateTo`-Editornavigation, da OneNote dabei nach einem Insert
 abstürzen kann. Solange OneNote keine sichere Editorfokus-API bereitstellt, kann
-zum Weitertippen nach einem Ribbon-Insert ein Klick auf die Seite erforderlich
-sein. Ein Aktivierungsfehler wird ausschließlich protokolliert und blockiert den
-erfolgreichen Insert nicht durch einen modalen Hinweis.
+zum sofortigen Weitertippen nach einem Ribbon-Insert weiterhin ein Klick auf die
+Seite erforderlich sein. Die Containerverbreiterung ändert ausschließlich die
+Breite und stellt keinen Editorfokus her. Ein Aktivierungsfehler wird ausschließlich
+protokolliert und blockiert den erfolgreichen Insert nicht durch einen modalen
+Hinweis.
 Damit folgt der Einfügepfad wie OneMores öffentlich beschriebenes
 `SelectionRange`-/`PageEditor.InsertOrReplace`-Muster einer expliziten
 Selection-Range statt einer globalen Outline-Suche, ohne OneMore-Code zu

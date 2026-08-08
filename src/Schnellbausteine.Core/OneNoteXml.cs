@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Xml.Linq;
 
@@ -74,6 +75,7 @@ namespace Schnellbausteine.Core
         {
             public List<XElement> Markers;
             public OneNoteSelectionInfo Info;
+            public XElement Outline;
         }
 
         public static bool HasSelection(XDocument page)
@@ -167,12 +169,16 @@ namespace Schnellbausteine.Core
                 }
             }
 
-            return new XDocument(
-                new XElement(Snippet + "Snippet",
-                    new XAttribute("version", "1"),
-                    definitions,
-                    quickStyles,
-                    content));
+            var snippet = new XElement(Snippet + "Snippet",
+                new XAttribute("version", "1"));
+            double minimumWidth;
+            if (TryDeriveMinimumWidth(selection.Outline, content, out minimumWidth))
+            {
+                snippet.Add(new XElement(Snippet + "Geometry",
+                    new XAttribute("minWidth", FormatWidth(minimumWidth))));
+            }
+            snippet.Add(definitions, quickStyles, content);
+            return new XDocument(snippet);
         }
 
         public static OneNoteSelectionInfo AnalyzeSelection(XDocument page)
@@ -210,13 +216,23 @@ namespace Schnellbausteine.Core
             if (selection.Info.Scope == "TableCell")
             {
                 InsertIntoTableCell(markers[0], incoming);
-                return CompleteInsertion(page, selection.Info, "ReplaceTableCell");
+                return CompleteInsertion(
+                    page,
+                    fragment,
+                    selection.Outline,
+                    selection.Info,
+                    "ReplaceTableCell");
             }
 
             if (selection.Info.Scope == "SpecialCursor")
             {
                 InsertAfterContainingParagraph(markers[0], incoming);
-                return CompleteInsertion(page, selection.Info, "AfterSpecialParagraph");
+                return CompleteInsertion(
+                    page,
+                    fragment,
+                    selection.Outline,
+                    selection.Info,
+                    "AfterSpecialParagraph");
             }
 
             if (CanInsertInline(incoming) &&
@@ -224,11 +240,21 @@ namespace Schnellbausteine.Core
                 markers.Select(marker => marker.Parent).Distinct().Count() == 1)
             {
                 InsertInline(markers, incoming[0]);
-                return CompleteInsertion(page, selection.Info, "Inline");
+                return CompleteInsertion(
+                    page,
+                    fragment,
+                    selection.Outline,
+                    selection.Info,
+                    "Inline");
             }
 
             InsertBlocks(markers, incoming);
-            return CompleteInsertion(page, selection.Info, "BlockRange");
+            return CompleteInsertion(
+                page,
+                fragment,
+                selection.Outline,
+                selection.Info,
+                "BlockRange");
         }
 
         public static void ValidatePostInsertCaret(XDocument page)
@@ -398,10 +424,13 @@ namespace Schnellbausteine.Core
 
         private static OneNoteInsertionResult CompleteInsertion(
             XDocument page,
+            XDocument fragment,
+            XElement targetOutline,
             OneNoteSelectionInfo selection,
             string strategy)
         {
             ValidatePostInsertCaret(page);
+            ExpandOutlineToMinimumWidth(targetOutline, fragment);
             return new OneNoteInsertionResult(selection, strategy);
         }
 
@@ -432,6 +461,7 @@ namespace Schnellbausteine.Core
             bool usable = false;
             string problem = "OneNote hat die Cursor- oder Auswahlmarkierung verloren. Es wurde nichts eingefügt.";
 
+            XElement selectedOutline = null;
             if (markers.Count > 0)
             {
                 List<XElement> outlines = markers
@@ -514,11 +544,14 @@ namespace Schnellbausteine.Core
                     scope = "Ambiguous";
                     problem = "Die OneNote-Auswahl besitzt keinen unterstützten Einfügeanker.";
                 }
+
+                if (outlines.Count == 1) selectedOutline = outlines[0];
             }
 
             return new SelectionContext
             {
                 Markers = markers,
+                Outline = selectedOutline,
                 Info = new OneNoteSelectionInfo(
                     scope,
                     containerScope,
@@ -824,6 +857,111 @@ namespace Schnellbausteine.Core
             return value.IndexOf("<a ", StringComparison.OrdinalIgnoreCase) >= 0 ||
                    value.IndexOf("<!--", StringComparison.Ordinal) >= 0 ||
                    text.Descendants().Any();
+        }
+
+        private static bool TryDeriveMinimumWidth(
+            XElement outline,
+            XElement content,
+            out double minimumWidth)
+        {
+            minimumWidth = 0;
+            double width;
+            if (outline != null &&
+                TryReadWidth(outline.Element(One + "Size"), out width))
+            {
+                minimumWidth = width;
+            }
+
+            foreach (XElement table in content.DescendantsAndSelf(One + "Table"))
+            {
+                if (TryReadTableWidth(table, out width))
+                {
+                    minimumWidth = Math.Max(minimumWidth, width);
+                }
+            }
+            foreach (XElement image in content.DescendantsAndSelf(One + "Image"))
+            {
+                if (TryReadWidth(image.Element(One + "Size"), out width))
+                {
+                    minimumWidth = Math.Max(minimumWidth, width);
+                }
+            }
+            return minimumWidth > 0;
+        }
+
+        private static bool TryReadTableWidth(XElement table, out double width)
+        {
+            width = 0;
+            XElement columns = table.Element(One + "Columns");
+            if (columns == null) return false;
+            List<XElement> columnList = columns.Elements(One + "Column").ToList();
+            if (columnList.Count == 0) return false;
+
+            foreach (XElement column in columnList)
+            {
+                double columnWidth;
+                if (!TryReadPositiveDouble(
+                    (string)column.Attribute("width"),
+                    out columnWidth))
+                {
+                    width = 0;
+                    return false;
+                }
+                width += columnWidth;
+            }
+            return IsPositiveFinite(width);
+        }
+
+        private static bool TryReadWidth(XElement size, out double width)
+        {
+            return TryReadPositiveDouble(
+                size == null ? null : (string)size.Attribute("width"),
+                out width);
+        }
+
+        private static bool TryReadPositiveDouble(string value, out double result)
+        {
+            return double.TryParse(
+                    value,
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out result) &&
+                IsPositiveFinite(result);
+        }
+
+        private static bool IsPositiveFinite(double value)
+        {
+            return value > 0 && !double.IsNaN(value) && !double.IsInfinity(value);
+        }
+
+        private static string FormatWidth(double width)
+        {
+            return width.ToString("0.################", CultureInfo.InvariantCulture);
+        }
+
+        private static void ExpandOutlineToMinimumWidth(
+            XElement outline,
+            XDocument fragment)
+        {
+            if (outline == null || fragment.Root == null) return;
+            XElement geometry = fragment.Root.Element(Snippet + "Geometry");
+            double minimumWidth;
+            if (geometry == null ||
+                !TryReadPositiveDouble(
+                    (string)geometry.Attribute("minWidth"),
+                    out minimumWidth))
+            {
+                return;
+            }
+
+            XElement size = outline.Element(One + "Size");
+            double currentWidth;
+            if (!TryReadWidth(size, out currentWidth) ||
+                currentWidth >= minimumWidth)
+            {
+                return;
+            }
+            size.SetAttributeValue("width", FormatWidth(minimumWidth));
         }
 
         private static void ResolveImageData(XElement content, Func<string, string> binaryResolver)
