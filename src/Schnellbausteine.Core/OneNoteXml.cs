@@ -268,6 +268,63 @@ namespace Schnellbausteine.Core
             }
         }
 
+        public static string GetPostInsertFocusTargetObjectId(XDocument page)
+        {
+            if (page == null) throw new ArgumentNullException("page");
+            if (page.Root == null)
+            {
+                throw new InvalidOperationException("Das OneNote-Seitendokument besitzt kein Wurzelelement.");
+            }
+
+            List<XElement> candidates = page.Descendants(One + "T")
+                .Where(element =>
+                    string.Equals(
+                        (string)element.Attribute("selected"),
+                        "all",
+                        StringComparison.Ordinal) &&
+                    element.Parent != null &&
+                    element.Parent.Name == One + "OE" &&
+                    element.Nodes().Count() == 1 &&
+                    element.Nodes().Single() is XCData &&
+                    element.Value.Length == 0)
+                .ToList();
+            if (candidates.Count != 1)
+            {
+                throw new InvalidOperationException(
+                    "OneNote lieferte keinen eindeutigen leeren Cursoranker.");
+            }
+
+            XElement caret = candidates[0];
+            List<XElement> selectedElements = page.Root
+                .DescendantsAndSelf()
+                .Where(element => element.Attribute("selected") != null)
+                .ToList();
+            bool validSelectionHierarchy = selectedElements.All(element =>
+                ReferenceEquals(element, caret) ||
+                caret.Ancestors().Any(ancestor => ReferenceEquals(ancestor, element)) &&
+                string.Equals(
+                    (string)element.Attribute("selected"),
+                    "partial",
+                    StringComparison.Ordinal));
+            if (!validSelectionHierarchy)
+            {
+                throw new InvalidOperationException(
+                    "OneNote lieferte neben dem Cursoranker weitere Auswahlmarkierungen.");
+            }
+
+            string objectId = caret
+                .AncestorsAndSelf()
+                .TakeWhile(element => element.Name != One + "Page")
+                .Select(element => (string)element.Attribute("objectID"))
+                .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+            if (string.IsNullOrWhiteSpace(objectId))
+            {
+                throw new InvalidOperationException(
+                    "Der Cursoranker besitzt keine von OneNote vergebene objectID.");
+            }
+            return objectId;
+        }
+
         private static void InsertInline(IList<XElement> markers, XElement incoming)
         {
             XElement first = markers[0];

@@ -1,42 +1,63 @@
 using System;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Xml;
 using System.Xml.Linq;
-using Microsoft.Office.Interop.OneNote;
 using Schnellbausteine.Core;
 
 namespace Schnellbausteine.AddIn
 {
+    internal sealed class OneNoteFocusException : Exception
+    {
+        public OneNoteFocusException(string message, Exception innerException)
+            : base(message, innerException)
+        {
+        }
+    }
+
     internal sealed class OneNoteClient : IDisposable
     {
-        private const XMLSchema Schema2013 = (XMLSchema)2;
-        private IApplication application;
+        private IOneNoteApplicationAdapter application;
         private string currentPageId;
         private IntPtr currentWindowHandle;
         private DateTime expectedLastModifiedTime;
         private bool hasExpectedLastModifiedTime;
 
         public OneNoteClient()
+            : this(new OneNoteApplicationAdapter())
         {
             Log.Trace("onenote.client", "constructor.entry");
-            Type applicationType = Type.GetTypeFromProgID("OneNote.Application");
-            if (applicationType == null)
+        }
+
+        internal OneNoteClient(IOneNoteApplicationAdapter application)
+        {
+            if (application == null) throw new ArgumentNullException("application");
+            this.application = application;
+        }
+
+        internal OneNoteClient(
+            IOneNoteApplicationAdapter application,
+            string currentPageId,
+            IntPtr currentWindowHandle,
+            DateTime expectedLastModifiedTime)
+            : this(application)
+        {
+            if (string.IsNullOrEmpty(currentPageId))
             {
-                throw new InvalidOperationException("OneNote Desktop ist nicht installiert.");
+                throw new ArgumentException("Die Seiten-ID darf nicht leer sein.", "currentPageId");
             }
-            Log.Trace("onenote.application.activate", "before");
-            application = (IApplication)Activator.CreateInstance(applicationType);
-            Log.Trace("onenote.application.activate", "after");
+            this.currentPageId = currentPageId;
+            this.currentWindowHandle = currentWindowHandle;
+            this.expectedLastModifiedTime = expectedLastModifiedTime;
+            hasExpectedLastModifiedTime = true;
         }
 
         public XDocument ReadCurrentPage()
         {
             Log.Trace("onenote.page.read", "entry");
             currentPageId = GetCurrentPageId();
-            string xml;
             Log.Trace("onenote.application.GetPageContent", "before");
-            application.GetPageContent(
-                currentPageId, out xml, PageInfo.piBinaryDataSelection, Schema2013);
+            string xml = application.GetPageContent(currentPageId, true, true);
             Log.Trace("onenote.application.GetPageContent", "after");
             XDocument page = XDocument.Parse(xml, LoadOptions.PreserveWhitespace);
             XAttribute lastModified = page.Root == null
@@ -68,9 +89,8 @@ namespace Schnellbausteine.AddIn
         {
             Log.Trace("onenote.binary.read", "entry");
             if (string.IsNullOrEmpty(currentPageId)) currentPageId = GetCurrentPageId();
-            string value;
             Log.Trace("onenote.application.GetBinaryPageContent", "before");
-            application.GetBinaryPageContent(currentPageId, callbackId, out value);
+            string value = application.GetBinaryPageContent(currentPageId, callbackId);
             Log.Trace("onenote.application.GetBinaryPageContent", "after");
             Log.Trace("onenote.binary.read", "exit");
             return value;
@@ -89,59 +109,62 @@ namespace Schnellbausteine.AddIn
             Log.Trace("onenote.application.UpdatePageContent", "before");
             application.UpdatePageContent(
                 page.ToString(SaveOptions.DisableFormatting),
-                expectedLastModifiedTime,
-                Schema2013,
-                false);
+                expectedLastModifiedTime);
             Log.Trace("onenote.application.UpdatePageContent", "after");
             hasExpectedLastModifiedTime = false;
             Log.Trace("onenote.page.update", "exit");
         }
 
-        public void NavigateToCurrentPage()
+        public void UpdateCurrentPageAndRestoreFocus(XDocument page)
         {
-            if (string.IsNullOrEmpty(currentPageId))
+            UpdateCurrentPage(page);
+            try
             {
-                throw new InvalidOperationException("Es ist keine aktuelle OneNote-Seite bekannt.");
+                Log.Trace("onenote.application.GetPageContent.focus", "before");
+                string refreshedXml = application.GetPageContent(currentPageId, false, true);
+                Log.Trace("onenote.application.GetPageContent.focus", "after");
+                XDocument refreshedPage = XDocument.Parse(
+                    refreshedXml,
+                    LoadOptions.PreserveWhitespace);
+                string targetObjectId =
+                    OneNoteXml.GetPostInsertFocusTargetObjectId(refreshedPage);
+                Log.Diagnostic("onenote.focus.target", "resolved");
+                Log.Trace("onenote.application.NavigateTo", "before");
+                application.NavigateTo(currentPageId, targetObjectId);
+                Log.Trace("onenote.application.NavigateTo", "after");
             }
-            Log.Trace("onenote.application.NavigateTo", "before");
-            application.NavigateTo(currentPageId);
-            Log.Trace("onenote.application.NavigateTo", "after");
+            catch (COMException exception)
+            {
+                throw new OneNoteFocusException(
+                    "OneNote konnte den eingefügten Cursoranker nicht fokussieren.",
+                    exception);
+            }
+            catch (XmlException exception)
+            {
+                throw new OneNoteFocusException(
+                    "OneNote lieferte nach dem Einfügen ungültiges Seiten-XML.",
+                    exception);
+            }
+            catch (InvalidOperationException exception)
+            {
+                throw new OneNoteFocusException(
+                    "OneNote lieferte nach dem Einfügen keinen eindeutigen Fokusanker.",
+                    exception);
+            }
         }
 
         private string GetCurrentPageId()
         {
-            Microsoft.Office.Interop.OneNote.Windows windows = null;
-            Window window = null;
-            try
+            Log.Trace("onenote.current-window", "before");
+            OneNoteWindowInfo window = application.GetCurrentWindow();
+            Log.Trace("onenote.current-window", "after");
+            if (window == null || string.IsNullOrEmpty(window.PageId))
             {
-                Log.Trace("onenote.application.Windows", "before");
-                windows = application.Windows;
-                Log.Trace("onenote.application.Windows", "after");
-                Log.Trace("onenote.windows.CurrentWindow", "before");
-                window = windows.CurrentWindow;
-                Log.Trace("onenote.windows.CurrentWindow", "after");
-                if (window == null)
-                {
-                    throw new InvalidOperationException("OneNote hat keine aktive Seite.");
-                }
-                Log.Trace("onenote.window.CurrentPageId", "before");
-                string pageId = window.CurrentPageId;
-                Log.Trace("onenote.window.CurrentPageId", "after");
-                if (string.IsNullOrEmpty(pageId))
-                {
-                    throw new InvalidOperationException("OneNote hat keine aktive Seite.");
-                }
-                Log.Trace("onenote.window.WindowHandle", "before");
-                currentWindowHandle = new IntPtr(unchecked((long)window.WindowHandle));
-                Log.Trace("onenote.window.WindowHandle", "after");
-                Log.Trace("onenote.current-page", "resolved");
-                return pageId;
+                throw new InvalidOperationException("OneNote hat keine aktive Seite.");
             }
-            finally
-            {
-                Release("onenote.window.release", window);
-                Release("onenote.windows.release", windows);
-            }
+            currentWindowHandle = window.WindowHandle;
+            Log.Trace("onenote.current-page", "resolved");
+            return window.PageId;
         }
 
         public void Dispose()
@@ -149,18 +172,10 @@ namespace Schnellbausteine.AddIn
             Log.Trace("onenote.client", "dispose.entry");
             if (application != null)
             {
-                Release("onenote.application.release", application);
+                application.Dispose();
                 application = null;
             }
             Log.Trace("onenote.client", "dispose.exit");
-        }
-
-        private static void Release(string operation, object value)
-        {
-            if (value == null || !Marshal.IsComObject(value)) return;
-            Log.Trace(operation, "before");
-            Marshal.FinalReleaseComObject(value);
-            Log.Trace(operation, "after");
         }
     }
 }

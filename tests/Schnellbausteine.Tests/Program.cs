@@ -47,6 +47,8 @@ namespace Schnellbausteine.Tests
             PostInsertCaretIsExactForList,
             PostInsertCaretIsExactForImage,
             PostInsertCaretIsExactForMultipleParagraphs,
+            PostInsertFocusTargetPrefersNearestObjectId,
+            PostInsertFocusTargetAllowsPartialAncestors,
             UserInterfaceStringsUseGermanDiacritics,
             MissingSelectionIsRejectedWithoutMutation,
             AmbiguousSelectionIsRejectedWithoutMutation,
@@ -500,6 +502,7 @@ namespace Schnellbausteine.Tests
                 "<one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[nach]]></one:T>" +
                 "</one:OE></one:OEChildren></one:Outline>"), page);
             AssertSinglePostInsertCaret(page);
+            AssertPostInsertFocusTarget(page, "text-focus");
         }
 
         private static void PostInsertCaretIsExactForRange()
@@ -519,6 +522,7 @@ namespace Schnellbausteine.Tests
                 "<one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[nach]]></one:T>" +
                 "</one:OE></one:OEChildren></one:Outline>"), page);
             AssertSinglePostInsertCaret(page);
+            AssertPostInsertFocusTarget(page, "range-focus");
         }
 
         private static void PostInsertCaretIsExactForBlock()
@@ -544,6 +548,7 @@ namespace Schnellbausteine.Tests
                 "<one:T><![CDATA[nach]]></one:T></one:OE>" +
                 "</one:OEChildren></one:Outline>"), page);
             AssertSinglePostInsertCaret(page);
+            AssertPostInsertFocusTarget(page, "block-focus");
         }
 
         private static void PostInsertCaretIsExactForTable()
@@ -571,6 +576,7 @@ namespace Schnellbausteine.Tests
                 "</one:OEChildren></one:Cell>" +
                 "</one:Row></one:Table></one:OE></one:OEChildren></one:Outline>"), page);
             AssertSinglePostInsertCaret(page);
+            AssertPostInsertFocusTarget(page, "table-focus");
         }
 
         private static void PostInsertCaretIsExactForList()
@@ -592,6 +598,7 @@ namespace Schnellbausteine.Tests
                 "<one:T selected=\"all\"><![CDATA[]]></one:T>" +
                 "</one:OE></one:OEChildren></one:Outline>"), page);
             AssertSinglePostInsertCaret(page);
+            AssertPostInsertFocusTarget(page, "list-focus");
         }
 
         private static void PostInsertCaretIsExactForImage()
@@ -613,6 +620,7 @@ namespace Schnellbausteine.Tests
                 "<one:T><![CDATA[nach]]></one:T></one:OE>" +
                 "</one:OEChildren></one:Outline>"), page);
             AssertSinglePostInsertCaret(page);
+            AssertPostInsertFocusTarget(page, "image-focus");
         }
 
         private static void PostInsertCaretIsExactForMultipleParagraphs()
@@ -635,6 +643,32 @@ namespace Schnellbausteine.Tests
                 "<one:OE><one:T selected=\"all\"><![CDATA[]]></one:T></one:OE>" +
                 "</one:OEChildren></one:Outline>"), page);
             AssertSinglePostInsertCaret(page);
+            AssertPostInsertFocusTarget(page, "multiple-paragraphs-focus");
+        }
+
+        private static void PostInsertFocusTargetPrefersNearestObjectId()
+        {
+            XDocument page = Page(
+                "<one:Outline objectID=\"outline-focus\"><one:OEChildren>" +
+                "<one:OE objectID=\"paragraph-focus\">" +
+                "<one:T objectID=\"text-focus\" selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+
+            Equal("text-focus", OneNoteXml.GetPostInsertFocusTargetObjectId(page));
+
+            page.Descendants(OneNoteXml.One + "T").Single().Attribute("objectID").Remove();
+            Equal("paragraph-focus", OneNoteXml.GetPostInsertFocusTargetObjectId(page));
+        }
+
+        private static void PostInsertFocusTargetAllowsPartialAncestors()
+        {
+            XDocument page = Page(
+                "<one:Outline selected=\"partial\"><one:OEChildren>" +
+                "<one:OE objectID=\"paragraph-focus\" selected=\"partial\">" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+
+            Equal("paragraph-focus", OneNoteXml.GetPostInsertFocusTargetObjectId(page));
         }
 
         private static void UserInterfaceStringsUseGermanDiacritics()
@@ -781,6 +815,15 @@ namespace Schnellbausteine.Tests
             Equal(1, page.Root.DescendantsAndSelf().Attributes("selected").Count());
             Assert(page.ToString(SaveOptions.DisableFormatting)
                 .Contains("<![CDATA[]]>"), "Der serialisierte Cursoranker enthält kein leeres CDATA.");
+        }
+
+        private static void AssertPostInsertFocusTarget(XDocument page, string objectId)
+        {
+            XElement caret = page.Descendants(OneNoteXml.One + "T")
+                .Single(element => (string)element.Attribute("selected") == "all");
+            caret.Parent.SetAttributeValue("objectID", objectId);
+            Equal(objectId, OneNoteXml.GetPostInsertFocusTargetObjectId(page));
+            caret.Parent.Attribute("objectID").Remove();
         }
 
         private static string FindRepositoryRoot()
