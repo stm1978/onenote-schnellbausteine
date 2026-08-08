@@ -51,26 +51,29 @@ Gespeicherte Schnellbausteine bleiben dabei erhalten.
    eindeutigen Namen eingeben. Bei Namenskonflikten wird explizit nachgefragt,
    ob überschrieben oder ein anderer Name verwendet werden soll.
 3. Im Register **Start** auf **Schnellbausteine** klicken und den gewünschten,
-   alphabetisch sortierten Eintrag im kompakten Menü wählen. Unter dem Trennstrich
-   öffnet **Schnellbausteine verwalten** die bestehende Verwaltung zum Umbenennen
-   oder Löschen nach Bestätigung.
+   alphabetisch sortierten Eintrag in der nativen Office-Galerie wählen. Unter der
+   nativen Trennlinie öffnet **Schnellbausteine verwalten** die bestehende
+   Verwaltung zum Umbenennen oder Löschen nach Bestätigung.
 
 Beim Einfügen ersetzt ein Baustein markierten Text wie in Word. Reine
 Textfragmente werden direkt in den Lauf eingefügt. Blockinhalte (Listen,
 Tabellen, Bilder oder mehrere Absätze) teilen den aktuellen Absatz sicher und
 werden dazwischen eingesetzt. Bei einem technisch nicht eindeutig teilbaren
 Cursor in Hyperlink- oder MathML-Inhalt wird der Baustein hinter dem betroffenen
-Absatz eingefügt; der Spezialinhalt bleibt unverändert. Die Cursor- oder
-Auswahlmarkierung wird vor dem Öffnen des Auswahlfensters zusammen mit der
-Seiten-XML erfasst. Fehlt sie oder ist sie mehrdeutig, bricht das Add-in sichtbar
-ab, statt an einer geratenen Outline-Position einzufügen.
+Absatz eingefügt; der Spezialinhalt bleibt unverändert. Nach dem Klick auf einen
+Galerieeintrag liest der verzögerte STA-Einfügepfad die Seite einschließlich
+`piBinaryDataSelection`. Fehlt die Cursor- oder Auswahlmarkierung oder ist sie
+mehrdeutig, bricht das Add-in sichtbar ab, statt an einer geratenen
+Outline-Position einzufügen.
 
-Das Schnellbaustein-Menü lässt sich mit Pfeiltasten und Eingabetaste bedienen;
-Escape oder ein Klick außerhalb schließt es ohne Änderung. Da Office keine
-verlässlichen Koordinaten einzelner Ribbon-Schaltflächen bereitstellt, erscheint
-es stabil unterhalb des Ribbonbereichs an der oberen rechten Kante des
-OneNote-Fensters. Dafür werden weder UI Automation noch Bildschirminhalte
-ausgelesen.
+Galerie, Tastatursteuerung, Escape und Click-away werden vollständig von Office
+bereitgestellt; das Add-in öffnet keine eigene Popup-Oberfläche.
+
+> **Experimentell:** Offline lässt sich nicht beweisen, ob OneNote die
+> `piBinaryDataSelection`-Markierung beim Wechsel vom Seiteneditor in die native
+> Ribbon-Galerie bis zum `gallery.onAction` erhält. Der Insertionspfad protokolliert
+> deshalb ausschließlich Scope, Markertypen, Markeranzahl und XML-Pfade, niemals
+> Nutztext, und fügt ohne eindeutige Markierung nichts ein.
 
 Ist der Ziel-Textcontainer schmaler als der gespeicherte Baustein, verbreitert das
 Add-in nur diesen Container auf die gespeicherte Mindestbreite. Breitere Container
@@ -180,12 +183,12 @@ pro Aktion erzeugt und explizit freigegeben; das von `OnConnection` gelieferte
 Application-Objekt wird nicht dauerhaft gehalten. Ribbon-Aktionen geben sofort
 an OneNote zurück. OneNote-COM-Aufrufe und WinForms-Dialoge laufen anschließend
 auf einem eigenen STA-Thread mit Windows-Message-Pump; Dialoge gehören dabei zum
-aktiven OneNote-Hauptfenster. Der einzelne Ribbon-Button verwendet bewusst kein
-Office-`dynamicMenu`: Bei vorhandenen Bausteinen wird die mit
-`piBinaryDataSelection` gelesene Seite vor dem Öffnen des kompakten Menüs
-verankert und nach der Auswahl genau dieses unveränderte XML-Abbild aktualisiert.
-Die Verwaltung löst danach keinen weiteren Selection-Lesevorgang aus; im leeren
-Zustand öffnet sich das Menü vollständig ohne Selection-Snapshot.
+aktiven OneNote-Hauptfenster. Das einzelne Ribbon-Control ist ein natives
+Office-`menu` mit einer dynamischen, einspaltigen `gallery`, nativer Trennlinie und
+abschließendem Manage-Button. Die synchronen `getItem*`-Callbacks greifen nur auf
+das lokale Repository-Snapshot zu und erzeugen kein OneNote-COM-Objekt. Erst
+`gallery.onAction` stellt den Insert nach Callback-Rückkehr auf den STA-Dispatcher
+und liest dort die aktuelle Seite mit `piBinaryDataSelection`.
 Der dabei erfasste `lastModifiedTime`-Wert verhindert, dass zwischenzeitliche
 Änderungen aus einem anderen Fenster oder durch Synchronisierung überschrieben
 werden; in diesem Fall bricht OneNote das Update sichtbar ab. Das aktualisierte
@@ -203,3 +206,14 @@ Damit folgt der Einfügepfad wie OneMores öffentlich beschriebenes
 `SelectionRange`-/`PageEditor.InsertOrReplace`-Muster einer expliziten
 Selection-Range statt einer globalen Outline-Suche, ohne OneMore-Code zu
 übernehmen.
+
+### Experimenteller OneNote-Realtest
+
+1. Cursor an eine klar erkennbare Stelle innerhalb eines Text-Outlines setzen,
+   Galerie öffnen, einen Baustein anklicken und Position sowie Selection-Diagnose
+   prüfen.
+2. Den Test in einem zweiten Outline wiederholen und bestätigen, dass niemals in
+   das erste Outline oder eine andere Position eingefügt wird.
+3. **Schnellbausteine verwalten** öffnen, Bausteine umbenennen und löschen sowie
+   einen neuen Baustein speichern; nach jedem CRUD-Vorgang die aktualisierte,
+   alphabetische Galerie und den deaktivierten Leerzustand prüfen.

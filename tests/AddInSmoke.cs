@@ -32,12 +32,21 @@ namespace Schnellbausteine.Tests
 
             string diagnosticLog =
                 "Schnellbausteine-Smoke-" + Guid.NewGuid().ToString("N") + ".log";
+            string galleryRepositoryRoot = Path.Combine(
+                Path.GetTempPath(),
+                "Schnellbausteine.AddInSmoke",
+                Guid.NewGuid().ToString("N"));
             Environment.SetEnvironmentVariable("SCHNELLBAUSTEINE_LOG_PATH", diagnosticLog);
             Type logType = null;
             try
             {
                 Assembly assembly = Assembly.LoadFrom(args[0]);
                 Type type = assembly.GetType("Schnellbausteine.AddIn.AddIn", true);
+                Assembly coreAssembly = Assembly.LoadFrom(Path.Combine(
+                    Path.GetDirectoryName(Path.GetFullPath(args[0])),
+                    "Schnellbausteine.Core.dll"));
+                Type repositoryType = coreAssembly.GetType(
+                    "Schnellbausteine.Core.SnippetRepository", true);
                 Type clientType = assembly.GetType(
                     "Schnellbausteine.AddIn.OneNoteClient", true);
                 Type applicationAdapterType = assembly.GetType(
@@ -46,12 +55,12 @@ namespace Schnellbausteine.Tests
                     "Schnellbausteine.AddIn.IOneNoteApplicationAdapter", true);
                 Type nameDialogType = assembly.GetType(
                     "Schnellbausteine.AddIn.NameDialog", true);
-                Type popupType = assembly.GetType(
-                    "Schnellbausteine.AddIn.SnippetMenuPopup", true);
-                Type popupInterfaceType = assembly.GetType(
-                    "Schnellbausteine.AddIn.ISnippetMenuPopup", true);
                 Type manageDialogType = assembly.GetType(
                     "Schnellbausteine.AddIn.ManageDialog", true);
+                Type popupType = assembly.GetType(
+                    "Schnellbausteine.AddIn.SnippetMenuPopup", false);
+                Type popupInterfaceType = assembly.GetType(
+                    "Schnellbausteine.AddIn.ISnippetMenuPopup", false);
                 FieldInfo applicationField = clientType.GetField(
                     "application", BindingFlags.Instance | BindingFlags.NonPublic);
                 FieldInfo piaApplicationField = applicationAdapterType.GetField(
@@ -60,8 +69,12 @@ namespace Schnellbausteine.Tests
                     "dispatcher", BindingFlags.Instance | BindingFlags.NonPublic);
                 FieldInfo saveSelectionActionField = type.GetField(
                     "saveSelectionAction", BindingFlags.Instance | BindingFlags.NonPublic);
-                FieldInfo openSnippetMenuActionField = type.GetField(
-                    "openSnippetMenuAction", BindingFlags.Instance | BindingFlags.NonPublic);
+                FieldInfo insertSnippetActionField = type.GetField(
+                    "insertSnippetAction", BindingFlags.Instance | BindingFlags.NonPublic);
+                FieldInfo manageSnippetsActionField = type.GetField(
+                    "manageSnippetsAction", BindingFlags.Instance | BindingFlags.NonPublic);
+                FieldInfo ribbonUiField = type.GetField(
+                    "ribbonUi", BindingFlags.Instance | BindingFlags.NonPublic);
                 Type dispatcherType = assembly.GetType(
                     "Schnellbausteine.AddIn.StaDispatcher", true);
                 logType = assembly.GetType("Schnellbausteine.AddIn.Log", true);
@@ -70,21 +83,29 @@ namespace Schnellbausteine.Tests
                 MethodInfo selectionMethod = type.GetMethod(
                     "HasCurrentSelection", BindingFlags.Instance | BindingFlags.NonPublic);
                 MethodInfo saveSelectionMethod = type.GetMethod("SaveSelection");
-                MethodInfo openSnippetMenuMethod = type.GetMethod("OpenSnippetMenu");
-                MethodInfo openSnippetMenuCoreMethod = type.GetMethod(
-                    "OpenSnippetMenuCore",
+                MethodInfo insertSnippetMethod = type.GetMethod("InsertGallerySnippet");
+                MethodInfo manageSnippetsMethod = type.GetMethod("ManageSnippets");
+                MethodInfo insertSnippetCoreMethod = type.GetMethod(
+                    "InsertSnippetCore",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                MethodInfo manageSnippetsCoreMethod = type.GetMethod(
+                    "ManageSnippetsCore",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                MethodInfo invalidateGalleryMethod = type.GetMethod(
+                    "InvalidateSnippetGallery",
                     BindingFlags.Instance | BindingFlags.NonPublic);
                 MethodInfo readCurrentPageMethod = clientType.GetMethod("ReadCurrentPage");
-                MethodInfo chooseMethod = popupInterfaceType.GetMethod("Choose");
-                MethodInfo popupDeactivateMethod = popupType.GetMethod(
-                    "OnDeactivate",
-                    BindingFlags.Instance | BindingFlags.NonPublic);
+                MethodInfo[] galleryGetterMethods = new[]
+                {
+                    type.GetMethod("GetSnippetCount"),
+                    type.GetMethod("GetSnippetLabel"),
+                    type.GetMethod("GetSnippetId"),
+                    type.GetMethod("GetSnippetGalleryEnabled")
+                };
                 ConstructorInfo[] forbiddenCallbackConstructors =
                     clientType.GetConstructors(
                         BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
                     .Concat(nameDialogType.GetConstructors(
-                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
-                    .Concat(popupType.GetConstructors(
                         BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
                     .Concat(manageDialogType.GetConstructors(
                         BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
@@ -103,9 +124,32 @@ namespace Schnellbausteine.Tests
                 bool timeoutGuardWorks = VerifyCallbackTimeoutGuard();
                 bool saveCallbackHarnessWorks = VerifyDeferredCallback(
                     addIn, saveSelectionActionField, "SaveSelection");
-                object menuAddIn = Activator.CreateInstance(type);
-                bool menuCallbackHarnessWorks = VerifyDeferredCallback(
-                    menuAddIn, openSnippetMenuActionField, "OpenSnippetMenu");
+                object manageAddIn = Activator.CreateInstance(type);
+                bool manageCallbackHarnessWorks = VerifyDeferredCallback(
+                    manageAddIn, manageSnippetsActionField, "ManageSnippets");
+                Directory.CreateDirectory(galleryRepositoryRoot);
+                object galleryRepository = Activator.CreateInstance(
+                    repositoryType,
+                    new object[] { galleryRepositoryRoot });
+                XDocument galleryFragment = XDocument.Parse(
+                    "<sq:Snippet xmlns:sq=\"urn:schnellbausteine:v1\" " +
+                    "xmlns:one=\"http://schemas.microsoft.com/office/onenote/2013/onenote\" " +
+                    "version=\"1\"><sq:TagDefs/><sq:QuickStyleDefs/><sq:Content>" +
+                    "<one:OE><one:T><![CDATA[Test]]></one:T></one:OE>" +
+                    "</sq:Content></sq:Snippet>");
+                repositoryType.GetMethod("Save").Invoke(
+                    galleryRepository,
+                    new object[] { "Test", galleryFragment, false });
+                ConstructorInfo repositoryConstructor = type.GetConstructor(
+                    BindingFlags.Instance | BindingFlags.NonPublic,
+                    null,
+                    new[] { repositoryType },
+                    null);
+                object galleryAddIn = repositoryConstructor.Invoke(
+                    new[] { galleryRepository });
+                bool itemCallbackHarnessWorks = VerifyDeferredGalleryCallback(
+                    galleryAddIn,
+                    insertSnippetActionField);
                 bool visibilityCallback = (bool)type.GetMethod("CanSaveSelection").Invoke(
                     addIn, new object[] { null });
                 string ribbonXml = (string)type.GetMethod("GetCustomUI").Invoke(
@@ -115,9 +159,18 @@ namespace Schnellbausteine.Tests
                 XDocument ribbon = XDocument.Parse(ribbonXml);
                 XElement ribbonGroup = ribbon.Descendants(ribbonNamespace + "group")
                     .SingleOrDefault(element => (string)element.Attribute("id") == "sqGroup");
-                XElement mainButton = ribbonGroup == null
+                XElement mainMenu = ribbonGroup == null
                     ? null
-                    : ribbonGroup.Elements(ribbonNamespace + "button").SingleOrDefault();
+                    : ribbonGroup.Elements(ribbonNamespace + "menu").SingleOrDefault();
+                XElement gallery = mainMenu == null
+                    ? null
+                    : mainMenu.Elements(ribbonNamespace + "gallery").SingleOrDefault();
+                XElement separator = mainMenu == null
+                    ? null
+                    : mainMenu.Elements(ribbonNamespace + "menuSeparator").SingleOrDefault();
+                XElement manageButton = mainMenu == null
+                    ? null
+                    : mainMenu.Elements(ribbonNamespace + "button").SingleOrDefault();
                 XElement contextMenus = ribbon.Root.Element(ribbonNamespace + "contextMenus");
                 XElement textMenu = contextMenus == null
                     ? null
@@ -128,12 +181,35 @@ namespace Schnellbausteine.Tests
                     : textMenu.Elements(ribbonNamespace + "button").SingleOrDefault(
                         element => (string)element.Attribute("id") == "sqSaveSelection");
 
-                if (mainButton == null ||
+                if (mainMenu == null ||
                     ribbonGroup.Elements().Count() != 1 ||
-                    (string)mainButton.Attribute("id") != "sqMain" ||
-                    (string)mainButton.Attribute("label") != "Schnellbausteine" ||
-                    (string)mainButton.Attribute("onAction") != "OpenSnippetMenu" ||
+                    (string)mainMenu.Attribute("id") != "sqMain" ||
+                    (string)mainMenu.Attribute("label") != "Schnellbausteine" ||
+                    (string)mainMenu.Attribute("size") != "large" ||
+                    gallery == null ||
+                    (string)gallery.Attribute("id") != "sqGallery" ||
+                    (string)gallery.Attribute("columns") != "1" ||
+                    (string)gallery.Attribute("itemWidth") != "240" ||
+                    (string)gallery.Attribute("itemHeight") != "24" ||
+                    (string)gallery.Attribute("showLabel") != "false" ||
+                    (string)gallery.Attribute("showItemLabel") != "true" ||
+                    (string)gallery.Attribute("showItemImage") != "false" ||
+                    (string)gallery.Attribute("getItemCount") != "GetSnippetCount" ||
+                    (string)gallery.Attribute("getItemLabel") != "GetSnippetLabel" ||
+                    (string)gallery.Attribute("getItemID") != "GetSnippetId" ||
+                    (string)gallery.Attribute("getEnabled") != "GetSnippetGalleryEnabled" ||
+                    gallery.Attribute("getItemEnabled") != null ||
+                    (string)gallery.Attribute("onAction") != "InsertGallerySnippet" ||
+                    separator == null ||
+                    (string)separator.Attribute("id") != "sqManageSeparator" ||
+                    manageButton == null ||
+                    (string)manageButton.Attribute("id") != "sqManage" ||
+                    (string)manageButton.Attribute("label") != "Schnellbausteine verwalten" ||
+                    (string)manageButton.Attribute("onAction") != "ManageSnippets" ||
+                    !mainMenu.Elements().SequenceEqual(
+                        new[] { gallery, separator, manageButton }) ||
                     ribbon.Descendants(ribbonNamespace + "dynamicMenu").Any() ||
+                    ribbon.Descendants(ribbonNamespace + "form").Any() ||
                     saveButton == null ||
                     (string)saveButton.Attribute("label") != "Als Schnellbaustein speichern..." ||
                     (string)saveButton.Attribute("imageMso") !=
@@ -150,30 +226,74 @@ namespace Schnellbausteine.Tests
                     dispatcherField.FieldType != dispatcherType ||
                     saveSelectionActionField == null ||
                     saveSelectionActionField.FieldType != typeof(Action<IntPtr>) ||
-                    openSnippetMenuActionField == null ||
-                    openSnippetMenuActionField.FieldType != typeof(Action<IntPtr>) ||
+                    insertSnippetActionField == null ||
+                    !insertSnippetActionField.FieldType.IsGenericType ||
+                    insertSnippetActionField.FieldType.GetGenericTypeDefinition() != typeof(Action<,>) ||
+                    insertSnippetActionField.FieldType.GetGenericArguments()[1] != typeof(IntPtr) ||
+                    manageSnippetsActionField == null ||
+                    manageSnippetsActionField.FieldType != typeof(Action<IntPtr>) ||
+                    ribbonUiField == null ||
+                    galleryGetterMethods.Any(method => method == null) ||
+                    galleryGetterMethods.Any(method =>
+                        method.GetParameters().Length < 1 ||
+                        method.GetParameters()[0].ParameterType.FullName !=
+                            "Microsoft.Office.Core.IRibbonControl") ||
+                    galleryGetterMethods[0].ReturnType != typeof(int) ||
+                    galleryGetterMethods[0].GetParameters().Length != 1 ||
+                    galleryGetterMethods[1].ReturnType != typeof(string) ||
+                    galleryGetterMethods[1].GetParameters().Length != 2 ||
+                    galleryGetterMethods[1].GetParameters()[1].ParameterType != typeof(int) ||
+                    galleryGetterMethods[2].ReturnType != typeof(string) ||
+                    galleryGetterMethods[2].GetParameters().Length != 2 ||
+                    galleryGetterMethods[2].GetParameters()[1].ParameterType != typeof(int) ||
+                    galleryGetterMethods[3].ReturnType != typeof(bool) ||
+                    galleryGetterMethods[3].GetParameters().Length != 1 ||
                     dispatcherType.GetMethod("Post") == null ||
                     dispatcherType.GetMethod("PostAfterCallback") == null ||
                     dispatcherType.GetMethod("Shutdown") == null ||
                     !dispatcherWorks ||
                     !timeoutGuardWorks ||
                     !saveCallbackHarnessWorks ||
-                    !menuCallbackHarnessWorks ||
+                    !manageCallbackHarnessWorks ||
+                    !itemCallbackHarnessWorks ||
                     dispatchMethod == null ||
                     !CallsMember(saveSelectionMethod, dispatchMethod) ||
                     forbiddenCallbackConstructors.Any(
                         constructor => CallsMember(saveSelectionMethod, constructor)) ||
                     forbiddenCallbackConstructors.Any(
-                        constructor => CallsMember(openSnippetMenuMethod, constructor)) ||
-                    !CallsMethod(openSnippetMenuMethod, dispatchMethod) ||
-                    !CallsBefore(
-                        openSnippetMenuCoreMethod,
-                        readCurrentPageMethod,
-                        chooseMethod) ||
-                    popupDeactivateMethod == null ||
-                    popupDeactivateMethod.DeclaringType != popupType ||
-                    type.GetMethod("InsertSnippet") != null ||
-                    type.GetMethod("ManageSnippets") != null ||
+                        constructor => galleryGetterMethods.Any(
+                            getter => CallsMember(getter, constructor))) ||
+                    insertSnippetMethod == null ||
+                    insertSnippetMethod.ReturnType != typeof(void) ||
+                    insertSnippetMethod.GetParameters().Length != 3 ||
+                    insertSnippetMethod.GetParameters()[0].ParameterType.FullName !=
+                        "Microsoft.Office.Core.IRibbonControl" ||
+                    insertSnippetMethod.GetParameters()[1].ParameterType != typeof(string) ||
+                    insertSnippetMethod.GetParameters()[2].ParameterType != typeof(int) ||
+                    !CallsMethod(insertSnippetMethod, dispatchMethod) ||
+                    forbiddenCallbackConstructors.Any(
+                        constructor => CallsMember(insertSnippetMethod, constructor)) ||
+                    insertSnippetCoreMethod == null ||
+                    !CallsMethod(insertSnippetCoreMethod, readCurrentPageMethod) ||
+                    manageSnippetsCoreMethod == null ||
+                    invalidateGalleryMethod == null ||
+                    !CallsMember(saveSelectionMethod.DeclaringType.GetMethod(
+                        "SaveSelectionCore",
+                        BindingFlags.Instance | BindingFlags.NonPublic),
+                        invalidateGalleryMethod) ||
+                    !CallsMember(manageSnippetsCoreMethod, invalidateGalleryMethod) ||
+                    !CallsMember(
+                        invalidateGalleryMethod,
+                        ribbonUiField.FieldType.GetMethod("InvalidateControl")) ||
+                    popupType != null ||
+                    popupInterfaceType != null ||
+                    assembly.GetTypes().Any(candidate =>
+                        candidate.Name.Contains("SnippetMenuChoice") ||
+                        candidate.Name.Contains("SnippetPopupPlacement")) ||
+                    assembly.GetTypes().SelectMany(candidate => candidate.GetMethods(
+                        BindingFlags.Instance | BindingFlags.Static |
+                        BindingFlags.Public | BindingFlags.NonPublic))
+                        .Any(method => method.Name == "NavigateTo") ||
                     hasDynamicCallSites ||
                     referencesDynamicBinder ||
                     !visibilityCallback ||
@@ -228,6 +348,10 @@ namespace Schnellbausteine.Tests
                 }
                 Environment.SetEnvironmentVariable("SCHNELLBAUSTEINE_LOG_PATH", null);
                 if (File.Exists(diagnosticLog)) File.Delete(diagnosticLog);
+                if (Directory.Exists(galleryRepositoryRoot))
+                {
+                    Directory.Delete(galleryRepositoryRoot, true);
+                }
             }
         }
 
@@ -373,6 +497,80 @@ namespace Schnellbausteine.Tests
                 if (callbackFinished) actionCompleted.Dispose();
                 FieldInfo dispatcherField = addIn.GetType().GetField(
                     "dispatcher", BindingFlags.Instance | BindingFlags.NonPublic);
+                object dispatcher = dispatcherField.GetValue(addIn);
+                shutdown = ShutdownDispatcher(dispatcher, dispatcher.GetType());
+            }
+            return result && shutdown;
+        }
+
+        private static bool VerifyDeferredGalleryCallback(
+            object addIn,
+            FieldInfo actionField)
+        {
+            var actionCompleted = new ManualResetEvent(false);
+            ApartmentState apartment = ApartmentState.Unknown;
+            int callbackThreadId = 0;
+            int dispatchedThreadId = 0;
+            bool callbackReturned = false;
+            bool actionStartedBeforeReturn = false;
+            bool receivedSnippet = false;
+            bool result = false;
+            bool callbackFinished = false;
+            bool shutdown = false;
+            try
+            {
+                Action<object, IntPtr> action = delegate(object snippet, IntPtr ownerHandle)
+                {
+                    actionStartedBeforeReturn = !Volatile.Read(ref callbackReturned);
+                    apartment = Thread.CurrentThread.GetApartmentState();
+                    dispatchedThreadId = Thread.CurrentThread.ManagedThreadId;
+                    receivedSnippet = snippet != null &&
+                        (string)snippet.GetType().GetProperty("Name").GetValue(
+                            snippet,
+                            null) == "Test";
+                    actionCompleted.Set();
+                };
+                actionField.SetValue(addIn, action);
+                if ((int)addIn.GetType().GetMethod("GetSnippetCount").Invoke(
+                    addIn,
+                    new object[] { null }) != 1)
+                {
+                    return false;
+                }
+                string selectedItemId =
+                    (string)addIn.GetType().GetMethod("GetSnippetId").Invoke(
+                        addIn,
+                        new object[] { null, 0 });
+                MtaInvocation invocation = InvokeOnMta(delegate
+                {
+                    try
+                    {
+                        addIn.GetType().GetMethod("InsertGallerySnippet").Invoke(
+                            addIn,
+                            new object[] { null, selectedItemId, 0 });
+                    }
+                    finally
+                    {
+                        Volatile.Write(ref callbackReturned, true);
+                    }
+                }, TimeSpan.FromSeconds(2));
+                callbackThreadId = invocation.ThreadId;
+                if (!invocation.Completed) return false;
+                callbackFinished = true;
+                result = actionCompleted.WaitOne(TimeSpan.FromSeconds(5)) &&
+                    invocation.Exception == null &&
+                    receivedSnippet &&
+                    !actionStartedBeforeReturn &&
+                    invocation.Duration < TimeSpan.FromSeconds(2) &&
+                    apartment == ApartmentState.STA &&
+                    dispatchedThreadId != callbackThreadId;
+            }
+            finally
+            {
+                if (callbackFinished) actionCompleted.Dispose();
+                FieldInfo dispatcherField = addIn.GetType().GetField(
+                    "dispatcher",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
                 object dispatcher = dispatcherField.GetValue(addIn);
                 shutdown = ShutdownDispatcher(dispatcher, dispatcher.GetType());
             }

@@ -22,16 +22,28 @@ namespace Schnellbausteine.AddIn
     [ClassInterface(ClassInterfaceType.AutoDispatch)]
     public sealed class AddIn : IDTExtensibility2, IRibbonExtensibility
     {
-        private readonly SnippetRepository repository = new SnippetRepository(SnippetRepository.DefaultRoot);
+        private readonly SnippetRepository repository;
+        private readonly SnippetGalleryModel gallery;
         private readonly StaDispatcher dispatcher = new StaDispatcher();
         private Action<IntPtr> saveSelectionAction;
-        private Action<IntPtr> openSnippetMenuAction;
+        private Action<Snippet, IntPtr> insertSnippetAction;
+        private Action<IntPtr> manageSnippetsAction;
+        private IRibbonUI ribbonUi;
         private int operationActive;
 
         public AddIn()
+            : this(new SnippetRepository(SnippetRepository.DefaultRoot))
         {
+        }
+
+        internal AddIn(SnippetRepository repository)
+        {
+            if (repository == null) throw new ArgumentNullException("repository");
+            this.repository = repository;
+            gallery = new SnippetGalleryModel(repository);
             saveSelectionAction = SaveSelectionCore;
-            openSnippetMenuAction = OpenSnippetMenuCore;
+            insertSnippetAction = InsertSnippetCore;
+            manageSnippetsAction = ManageSnippetsCore;
         }
 
         public void OnConnection(object application, ext_ConnectMode connectMode, object addInInstance, ref Array custom)
@@ -81,6 +93,7 @@ namespace Schnellbausteine.AddIn
         public void RibbonLoaded(IRibbonUI ribbonUi)
         {
             Log.Trace("ribbon.loaded", "entry");
+            this.ribbonUi = ribbonUi;
         }
 
         public bool CanSaveSelection(IRibbonControl control)
@@ -175,6 +188,7 @@ namespace Schnellbausteine.AddIn
                     Log.Trace("repository.save", "before");
                     repository.Save(dialog.SnippetName, fragment, overwrite);
                     Log.Trace("repository.save", "after");
+                    InvalidateSnippetGallery();
                     Log.Trace("command.SaveSelection", "exit-saved");
                     return;
                 }
@@ -182,112 +196,131 @@ namespace Schnellbausteine.AddIn
             Log.Trace("command.SaveSelection", "exit-cancelled");
         }
 
-        public void OpenSnippetMenu(IRibbonControl control)
+        public int GetSnippetCount(IRibbonControl control)
         {
-            Log.Trace("callback.OpenSnippetMenu", "entry");
+            Log.Trace("callback.GetSnippetCount", "entry-no-com");
+            return gallery.RefreshAndGetCount();
+        }
+
+        public string GetSnippetLabel(IRibbonControl control, int itemIndex)
+        {
+            Log.Trace("callback.GetSnippetLabel", "entry-no-com");
+            return gallery.GetLabel(itemIndex);
+        }
+
+        public string GetSnippetId(IRibbonControl control, int itemIndex)
+        {
+            Log.Trace("callback.GetSnippetId", "entry-no-com");
+            return gallery.GetId(itemIndex);
+        }
+
+        public bool GetSnippetGalleryEnabled(IRibbonControl control)
+        {
+            Log.Trace("callback.GetSnippetGalleryEnabled", "entry-no-com");
+            return gallery.RefreshAndGetEnabled();
+        }
+
+        public void InsertGallerySnippet(
+            IRibbonControl control,
+            string selectedItemId,
+            int selectedItemIndex)
+        {
+            Log.Trace("callback.InsertGallerySnippet", "entry");
+            Snippet snippet = null;
+            Exception itemException = null;
+            try
+            {
+                snippet = gallery.GetSnippet(selectedItemId, selectedItemIndex);
+            }
+            catch (Exception exception)
+            {
+                itemException = exception;
+            }
             var callbackBodyCompleted = new TaskCompletionSource<object>();
             try
             {
                 DispatchUserAction(
-                    "OpenSnippetMenu",
+                    "InsertGallerySnippet",
                     callbackBodyCompleted.Task,
-                    "Die Schnellbausteine konnten nicht geöffnet werden.",
-                    openSnippetMenuAction);
-            }
-            finally
-            {
-                callbackBodyCompleted.SetResult(null);
-                Log.Trace("callback.OpenSnippetMenu", "exit");
-            }
-        }
-
-        private void OpenSnippetMenuCore(IntPtr fallbackOwnerHandle)
-        {
-            Log.Trace("command.OpenSnippetMenu", "entry");
-            IList<Snippet> snippets = repository.GetAll();
-            OneNoteClient oneNote = null;
-            XDocument anchoredPage = null;
-            Exception selectionException = null;
-            IntPtr ownerHandle = fallbackOwnerHandle;
-            try
-            {
-                if (snippets.Count > 0)
-                {
-                    oneNote = new OneNoteClient();
-                    try
+                    "Der Schnellbaustein konnte nicht eingefügt werden.",
+                    delegate(IntPtr ownerHandle)
                     {
-                        anchoredPage = oneNote.ReadCurrentPage();
-                        OneNoteSelectionInfo selection =
-                            OneNoteXml.AnalyzeSelection(anchoredPage);
-                        Log.Diagnostic(
-                            "onenote.selection.capture",
-                            selection.ToDiagnosticString());
-                        if (!selection.IsUsable)
-                        {
-                            selectionException =
-                                new InvalidOperationException(selection.Problem);
-                        }
-                    }
-                    catch (Exception exception)
-                    {
-                        selectionException = exception;
-                    }
-                    if (oneNote.CurrentWindowHandle != IntPtr.Zero)
-                    {
-                        ownerHandle = oneNote.CurrentWindowHandle;
-                    }
-                }
-
-                var owner = new WindowHandleOwner(
-                    ownerHandle == IntPtr.Zero ? fallbackOwnerHandle : ownerHandle);
-                SnippetMenuChoice choice;
-                using (ISnippetMenuPopup popup = new SnippetMenuPopup(snippets))
-                {
-                    choice = popup.Choose(owner);
-                }
-                Log.Trace("ui.SnippetMenuPopup", "disposed");
-
-                SnippetMenuChoiceDispatcher.Execute(
-                    choice,
-                    delegate(Snippet snippet)
-                    {
-                        if (selectionException != null) throw selectionException;
-                        if (oneNote == null || anchoredPage == null)
-                        {
-                            throw new InvalidOperationException(
-                                "Die OneNote-Auswahl wurde nicht verankert.");
-                        }
-                        InsertSnippetOperation.Execute(
-                            oneNote,
-                            anchoredPage,
-                            snippet,
-                            repository.LoadFragment);
-                    },
-                    delegate
-                    {
-                        if (oneNote != null)
-                        {
-                            oneNote.Dispose();
-                            oneNote = null;
-                        }
-                        ShowManageDialog(owner);
+                        if (itemException != null) throw itemException;
+                        insertSnippetAction(snippet, ownerHandle);
                     });
             }
             finally
             {
-                if (oneNote != null) oneNote.Dispose();
+                callbackBodyCompleted.SetResult(null);
+                Log.Trace("callback.InsertGallerySnippet", "exit");
             }
-            Log.Trace("command.OpenSnippetMenu", "exit");
         }
 
-        private void ShowManageDialog(IWin32Window owner)
+        private void InsertSnippetCore(Snippet snippet, IntPtr fallbackOwnerHandle)
         {
-            using (var dialog = new ManageDialog(repository, delegate { }))
+            Log.Trace("command.InsertGallerySnippet", "entry");
+            using (var oneNote = new OneNoteClient())
+            {
+                Log.Trace("onenote.gallery-selection.read.piBinaryDataSelection", "before");
+                XDocument anchoredPage = oneNote.ReadCurrentPage();
+                Log.Trace("onenote.gallery-selection.read.piBinaryDataSelection", "after");
+                OneNoteSelectionInfo selection = OneNoteXml.AnalyzeSelection(anchoredPage);
+                Log.Diagnostic(
+                    "onenote.gallery-selection.after-item-action",
+                    selection.ToDiagnosticString());
+                if (!selection.IsUsable)
+                {
+                    Log.Trace("command.InsertGallerySnippet", "abort-selection");
+                    throw new InvalidOperationException(selection.Problem);
+                }
+
+                InsertSnippetOperation.Execute(
+                    oneNote,
+                    anchoredPage,
+                    snippet,
+                    repository.LoadFragment);
+            }
+            Log.Trace("command.InsertGallerySnippet", "exit");
+        }
+
+        public void ManageSnippets(IRibbonControl control)
+        {
+            Log.Trace("callback.ManageSnippets", "entry");
+            var callbackBodyCompleted = new TaskCompletionSource<object>();
+            try
+            {
+                DispatchUserAction(
+                    "ManageSnippets",
+                    callbackBodyCompleted.Task,
+                    "Die Schnellbausteine-Verwaltung konnte nicht geöffnet werden.",
+                    manageSnippetsAction);
+            }
+            finally
+            {
+                callbackBodyCompleted.SetResult(null);
+                Log.Trace("callback.ManageSnippets", "exit");
+            }
+        }
+
+        private void ManageSnippetsCore(IntPtr fallbackOwnerHandle)
+        {
+            var owner = new WindowHandleOwner(fallbackOwnerHandle);
+            using (var dialog = new ManageDialog(repository, InvalidateSnippetGallery))
             {
                 Log.Trace("ui.ManageDialog", "before");
                 dialog.ShowDialog(owner);
                 Log.Trace("ui.ManageDialog", "after");
             }
+        }
+
+        private void InvalidateSnippetGallery()
+        {
+            gallery.Invalidate();
+            IRibbonUI currentRibbonUi = ribbonUi;
+            if (currentRibbonUi == null) return;
+            Log.Trace("ribbon.invalidate.sqGallery", "before");
+            currentRibbonUi.InvalidateControl("sqGallery");
+            Log.Trace("ribbon.invalidate.sqGallery", "after");
         }
 
         private void DispatchUserAction(
@@ -349,6 +382,124 @@ namespace Schnellbausteine.AddIn
         {
             [DllImport("user32.dll")]
             internal static extern IntPtr GetForegroundWindow();
+        }
+    }
+
+    internal sealed class SnippetGalleryModel
+    {
+        private const string EmptyLabel = "Keine Schnellbausteine gespeichert";
+        private readonly SnippetRepository repository;
+        private readonly object gate = new object();
+        private IList<Snippet> snapshot = new List<Snippet>();
+        private bool valid;
+
+        public SnippetGalleryModel(SnippetRepository repository)
+        {
+            if (repository == null) throw new ArgumentNullException("repository");
+            this.repository = repository;
+        }
+
+        public int RefreshAndGetCount()
+        {
+            lock (gate)
+            {
+                Refresh();
+                return Math.Max(1, snapshot.Count);
+            }
+        }
+
+        public bool RefreshAndGetEnabled()
+        {
+            lock (gate)
+            {
+                Refresh();
+                return snapshot.Count > 0;
+            }
+        }
+
+        public string GetLabel(int itemIndex)
+        {
+            lock (gate)
+            {
+                EnsureSnapshot();
+                return snapshot.Count == 0
+                    ? GetEmptyItem(itemIndex, EmptyLabel)
+                    : GetItem(itemIndex).Name;
+            }
+        }
+
+        public string GetId(int itemIndex)
+        {
+            lock (gate)
+            {
+                EnsureSnapshot();
+                return snapshot.Count == 0
+                    ? GetEmptyItem(itemIndex, "sqEmpty")
+                    : "sqSnippet_" + GetItem(itemIndex).Id;
+            }
+        }
+
+        public Snippet GetSnippet(string itemId, int itemIndex)
+        {
+            lock (gate)
+            {
+                EnsureSnapshot();
+                if (snapshot.Count == 0)
+                {
+                    throw new InvalidOperationException(
+                        "Es sind keine Schnellbausteine zum Einfügen gespeichert.");
+                }
+                Snippet item = GetItem(itemIndex);
+                if (!string.Equals(
+                    itemId,
+                    "sqSnippet_" + item.Id,
+                    StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        "Die ausgewählte Galerieposition ist nicht mehr eindeutig.");
+                }
+                return item;
+            }
+        }
+
+        public void Invalidate()
+        {
+            lock (gate)
+            {
+                valid = false;
+            }
+        }
+
+        private void EnsureSnapshot()
+        {
+            if (!valid)
+            {
+                throw new InvalidOperationException(
+                    "Die Schnellbaustein-Galerie wurde noch nicht aktualisiert.");
+            }
+        }
+
+        private void Refresh()
+        {
+            snapshot = repository.GetAll()
+                .OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+            valid = true;
+        }
+
+        private Snippet GetItem(int itemIndex)
+        {
+            if (itemIndex < 0 || itemIndex >= snapshot.Count)
+            {
+                throw new ArgumentOutOfRangeException("itemIndex");
+            }
+            return snapshot[itemIndex];
+        }
+
+        private static T GetEmptyItem<T>(int itemIndex, T value)
+        {
+            if (itemIndex != 0) throw new ArgumentOutOfRangeException("itemIndex");
+            return value;
         }
     }
 }
