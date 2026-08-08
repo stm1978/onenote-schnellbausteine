@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Drawing;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using System.Xml.Linq;
@@ -194,10 +194,10 @@ namespace Schnellbausteine.Tests
                 InsertNeverNavigatesAndActivationFollowsUpdate();
                 ActivationFailureDoesNotFailSuccessfulUpdate();
                 UpdateFailureDoesNotAttemptActivation();
-                MenuEntriesAreSortedAndSeparated();
+                GalleryItemsAreSortedAndAddressable();
+                EmptyGalleryItemIsDisabled();
                 ActivationFailureIsNonModalAndDoesNotFailInsert();
-                MenuChoiceDispatchesInsertManageAndCancel();
-                PopupPlacementIsStableAndClamped();
+                GalleryInvalidationReloadsCrud();
                 TargetAlreadyForegroundAcceptsSetForegroundFalse();
                 CurrentForegroundAndTargetThreadsAreAttached();
                 AttachedThreadsAreDetachedInFinally();
@@ -266,30 +266,40 @@ namespace Schnellbausteine.Tests
             Equal("update", string.Join(",", calls));
         }
 
-        private static void MenuEntriesAreSortedAndSeparated()
+        private static void GalleryItemsAreSortedAndAddressable()
         {
-            IList<SnippetMenuEntry> entries = SnippetMenuEntry.Create(new[]
+            WithTemporaryRepository(delegate(SnippetRepository repository)
             {
-                new Snippet { Id = "z", Name = "Zulu" },
-                new Snippet { Id = "a", Name = "Alpha" }
-            });
-            Equal(4, entries.Count);
-            Equal("Alpha", entries[0].Text);
-            Equal("Zulu", entries[1].Text);
-            Equal(SnippetMenuEntryKind.Separator, entries[2].Kind);
-            Equal(SnippetMenuEntryKind.Manage, entries[3].Kind);
-            Equal("Schnellbausteine verwalten", entries[3].Text);
+                Snippet zulu = repository.Save("Zulu", Fragment(), false);
+                Snippet alpha = repository.Save("Alpha", Fragment(), false);
+                var gallery = new SnippetGalleryModel(repository);
 
-            IList<SnippetMenuEntry> empty =
-                SnippetMenuEntry.Create(new Snippet[0]);
-            Equal(3, empty.Count);
-            Equal(SnippetMenuEntryKind.Empty, empty[0].Kind);
-            Equal(false, empty[0].Enabled);
-            Equal(SnippetMenuEntryKind.Separator, empty[1].Kind);
-            Equal("Schnellbausteine verwalten", empty[2].Text);
-            Equal(2, SnippetMenuEntry.FindEnabledIndex(empty, 1, 2));
-            Equal(3, SnippetMenuEntry.FindEnabledIndex(entries, 2, 1));
-            Equal(1, SnippetMenuEntry.FindEnabledIndex(entries, 2, 3));
+                Equal(2, gallery.RefreshAndGetCount());
+                Equal("Alpha", gallery.GetLabel(0));
+                Equal("Zulu", gallery.GetLabel(1));
+                Equal("sqSnippet_" + alpha.Id, gallery.GetId(0));
+                Equal("sqSnippet_" + zulu.Id, gallery.GetId(1));
+                Equal(true, gallery.RefreshAndGetEnabled());
+                Equal(alpha.Id, gallery.GetSnippet("sqSnippet_" + alpha.Id, 0).Id);
+                Throws<InvalidOperationException>(delegate
+                {
+                    gallery.GetSnippet("sqSnippet_" + zulu.Id, 0);
+                });
+            });
+        }
+
+        private static void EmptyGalleryItemIsDisabled()
+        {
+            WithTemporaryRepository(delegate(SnippetRepository repository)
+            {
+                var gallery = new SnippetGalleryModel(repository);
+                Equal(1, gallery.RefreshAndGetCount());
+                Equal("Keine Schnellbausteine gespeichert", gallery.GetLabel(0));
+                Equal("sqEmpty", gallery.GetId(0));
+                Equal(false, gallery.RefreshAndGetEnabled());
+                Throws<InvalidOperationException>(
+                    delegate { gallery.GetSnippet("sqEmpty", 0); });
+            });
         }
 
         private static void ActivationFailureIsNonModalAndDoesNotFailInsert()
@@ -314,45 +324,30 @@ namespace Schnellbausteine.Tests
             NoCallStartsWith(calls, "navigate:");
         }
 
-        private static void MenuChoiceDispatchesInsertManageAndCancel()
+        private static void GalleryInvalidationReloadsCrud()
         {
-            var calls = new List<string>();
-            var snippet = new Snippet { Id = "snippet-id", Name = "Test" };
-            Action<Snippet> insert = delegate(Snippet selected)
+            WithTemporaryRepository(delegate(SnippetRepository repository)
             {
-                calls.Add("insert:" + selected.Id);
-            };
-            Action manage = delegate { calls.Add("manage"); };
+                Snippet alpha = repository.Save("Alpha", Fragment(), false);
+                var gallery = new SnippetGalleryModel(repository);
+                Equal(1, gallery.RefreshAndGetCount());
 
-            SnippetMenuChoiceDispatcher.Execute(
-                SnippetMenuChoice.Insert(snippet),
-                insert,
-                manage);
-            SnippetMenuChoiceDispatcher.Execute(
-                SnippetMenuChoice.Manage(),
-                insert,
-                manage);
-            SnippetMenuChoiceDispatcher.Execute(
-                SnippetMenuChoice.Cancel(),
-                insert,
-                manage);
+                Snippet zulu = repository.Save("Zulu", Fragment(), false);
+                gallery.Invalidate();
+                Throws<InvalidOperationException>(delegate { gallery.GetLabel(0); });
+                Equal(2, gallery.RefreshAndGetCount());
 
-            Equal("insert:snippet-id,manage", string.Join(",", calls));
-        }
+                repository.Rename(zulu.Id, "Aaron");
+                gallery.Invalidate();
+                Equal(2, gallery.RefreshAndGetCount());
+                Equal("Aaron", gallery.GetLabel(0));
 
-        private static void PopupPlacementIsStableAndClamped()
-        {
-            Point position = SnippetPopupPlacement.Calculate(
-                new Rectangle(100, 50, 1000, 700),
-                new Rectangle(0, 0, 1920, 1080),
-                new Size(310, 300));
-            Equal(new Point(772, 162), position);
-
-            Point clamped = SnippetPopupPlacement.Calculate(
-                new Rectangle(1800, 1000, 200, 100),
-                new Rectangle(0, 0, 1920, 1080),
-                new Size(310, 300));
-            Equal(new Point(1610, 780), clamped);
+                repository.Delete(alpha.Id);
+                repository.Delete(zulu.Id);
+                gallery.Invalidate();
+                Equal(1, gallery.RefreshAndGetCount());
+                Equal(false, gallery.RefreshAndGetEnabled());
+            });
         }
 
         private static void TargetAlreadyForegroundAcceptsSetForegroundFalse()
@@ -487,6 +482,23 @@ namespace Schnellbausteine.Tests
                 "<one:OE><one:T><![CDATA[snippet]]></one:T></one:OE>" +
                 "</sq:Content></sq:Snippet>",
                 LoadOptions.PreserveWhitespace);
+        }
+
+        private static void WithTemporaryRepository(Action<SnippetRepository> action)
+        {
+            string path = Path.Combine(
+                Path.GetTempPath(),
+                "Schnellbausteine.OneNoteClientHarness",
+                Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(path);
+            try
+            {
+                action(new SnippetRepository(path));
+            }
+            finally
+            {
+                Directory.Delete(path, true);
+            }
         }
 
         private static void Equal<T>(T expected, T actual)

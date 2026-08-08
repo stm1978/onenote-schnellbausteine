@@ -81,9 +81,11 @@ namespace Schnellbausteine.AddIn
             bool includeBinaryData,
             bool includeSelection)
         {
-            PageInfo pageInfo = PageInfo.piBasic;
-            if (includeBinaryData) pageInfo |= PageInfo.piBinaryData;
-            if (includeSelection) pageInfo |= PageInfo.piSelection;
+            PageInfo pageInfo = includeBinaryData && includeSelection
+                ? PageInfo.piBinaryDataSelection
+                : PageInfo.piBasic;
+            if (includeBinaryData && !includeSelection) pageInfo = PageInfo.piBinaryData;
+            if (!includeBinaryData && includeSelection) pageInfo = PageInfo.piSelection;
 
             string xml;
             application.GetPageContent(pageId, out xml, pageInfo, Schema2013);

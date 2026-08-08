@@ -4,7 +4,16 @@
     <tabs>
       <tab idMso="TabHome">
         <group id="sqGroup" label="Schnellbausteine">
-          <button id="sqMain" label="Schnellbausteine" imageMso="QuickPartsInsertGallery" onAction="OpenSnippetMenu" size="large"/>
+          <menu id="sqMain" label="Schnellbausteine" imageMso="QuickPartsInsertGallery" size="large" itemSize="normal">
+            <gallery id="sqGallery" label="Schnellbausteine" columns="1"
+                     itemWidth="240" itemHeight="24" showLabel="false"
+                     showItemLabel="true" showItemImage="false"
+                     getItemCount="GetSnippetCount" getItemLabel="GetSnippetLabel"
+                     getItemID="GetSnippetId" getEnabled="GetSnippetGalleryEnabled"
+                     onAction="InsertGallerySnippet"/>
+            <menuSeparator id="sqManageSeparator"/>
+            <button id="sqManage" label="Schnellbausteine verwalten" onAction="ManageSnippets"/>
+          </menu>
         </group>
       </tab>
     </tabs>
