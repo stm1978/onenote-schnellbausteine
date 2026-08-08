@@ -21,9 +21,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install official Microsoft Office PIAs
+      - name: Prepare official Microsoft Office PIAs
         shell: powershell
         run: |
+          $ErrorActionPreference = "Stop"
           $url = "https://download.microsoft.com/download/c/1/d/c1d6dbbb-700d-4669-98cf-820ac3ae8e55/PIARedist.exe"
           $redist = Join-Path $env:RUNNER_TEMP "PIARedist.exe"
           Invoke-WebRequest $url -OutFile $redist
@@ -32,10 +33,39 @@ jobs:
           if ($actual -ne $expected) {
             throw "Office PIA checksum mismatch: $actual"
           }
-          $process = Start-Process $redist -ArgumentList "/quiet","/norestart" -Wait -PassThru
-          if ($process.ExitCode -ne 0) {
-            throw "Office PIA installation failed with exit code $($process.ExitCode)."
+
+          $package = Join-Path $env:RUNNER_TEMP "office-pia-package"
+          New-Item -ItemType Directory -Force $package | Out-Null
+          $process = Start-Process $redist -ArgumentList "/quiet","/extract:$package" -Wait -PassThru
+          if ($process.ExitCode -ne 0 -or -not (Test-Path "$package\o2010pia.msi")) {
+            throw "Office PIA extraction failed with exit code $($process.ExitCode)."
           }
+
+          $lessMsiUrl = "https://github.com/activescott/lessmsi/releases/download/v2.12.9/lessmsi-v2.12.9.zip"
+          $lessMsiZip = Join-Path $env:RUNNER_TEMP "lessmsi-v2.12.9.zip"
+          Invoke-WebRequest $lessMsiUrl -OutFile $lessMsiZip
+          $lessMsiExpected = "5B4E187E74B184AD3A63CCF06C3D17DAE2B8C4B6C298A996DBD51A9F6DB29D21"
+          $lessMsiActual = (Get-FileHash $lessMsiZip -Algorithm SHA256).Hash
+          if ($lessMsiActual -ne $lessMsiExpected) {
+            throw "lessmsi checksum mismatch: $lessMsiActual"
+          }
+
+          $lessMsi = Join-Path $env:RUNNER_TEMP "lessmsi"
+          Expand-Archive $lessMsiZip $lessMsi
+          $piaFiles = Join-Path $env:RUNNER_TEMP "office-pia-files"
+          New-Item -ItemType Directory -Force $piaFiles | Out-Null
+          & "$lessMsi\lessmsi.exe" x "$package\o2010pia.msi" "$piaFiles\"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $oneNote = Get-ChildItem $piaFiles -Recurse -Filter "Microsoft.Office.Interop.OneNote.dll" |
+            Where-Object { [Reflection.AssemblyName]::GetAssemblyName($_.FullName).Version.Major -eq 14 } |
+            Select-Object -First 1 -ExpandProperty FullName
+          $office = Get-ChildItem $piaFiles -Recurse -Filter "OFFICE.DLL" |
+            Where-Object { [Reflection.AssemblyName]::GetAssemblyName($_.FullName).Version.Major -eq 14 } |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $oneNote -or -not $office) { throw "Required Office PIAs were not extracted." }
+          "ONENOTE_PIA_PATH=$oneNote" | Out-File $env:GITHUB_ENV -Append
+          "OFFICE_PIA_PATH=$office" | Out-File $env:GITHUB_ENV -Append
 
       - name: Build and test x86
         shell: powershell

@@ -28,8 +28,16 @@ function Find-GacAssembly([string]$name, [string[]]$versions) {
 }
 
 if (-not (Test-Path $csc)) { throw ".NET Framework Compiler nicht gefunden: $csc" }
-$oneNote = Find-GacAssembly "Microsoft.Office.Interop.OneNote" @("15", "14")
-$office = Find-GacAssembly "office" @("15", "14")
+$oneNote = if ($env:ONENOTE_PIA_PATH -and (Test-Path $env:ONENOTE_PIA_PATH)) {
+    $env:ONENOTE_PIA_PATH
+} else {
+    Find-GacAssembly "Microsoft.Office.Interop.OneNote" @("15", "14")
+}
+$office = if ($env:OFFICE_PIA_PATH -and (Test-Path $env:OFFICE_PIA_PATH)) {
+    $env:OFFICE_PIA_PATH
+} else {
+    Find-GacAssembly "office" @("15", "14")
+}
 
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $common = @("/nologo", "/warnaserror+", "/langversion:5", "/optimize+", "/debug:pdbonly")
