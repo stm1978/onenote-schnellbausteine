@@ -126,9 +126,10 @@ jobs:
           if ($release) {
             gh release upload "${{ github.ref_name }}" $asset --clobber
           } else {
+            $releaseTitle = "OneNote Schnellbausteine $([char]0x2013) Beta 0.2"
             $arguments = @(
               "release", "create", "${{ github.ref_name }}", $asset,
-              "--title", "OneNote Schnellbausteine – Beta 0.2",
+              "--title", $releaseTitle,
               "--generate-notes"
             )
             if ("${{ github.ref_name }}" -match "-(preview|beta|rc)") {
