@@ -295,7 +295,7 @@ namespace Schnellbausteine.Tests
                             "SaveSelectionToQuickPartGallery" ||
                         (string)button.Attribute("onAction") != "SaveSelection" ||
                         button.Attribute("getVisible") != null ||
-                        button.Attribute("getEnabled") != null) ||
+                        (string)button.Attribute("getEnabled") != "GetFeatureEnabled") ||
                     (string)saveButtons[0].Attribute("insertBeforeMso") != "Cut" ||
                     (string)insertMenus[0].Attribute("insertBeforeMso") != "Cut" ||
                     (string)contextSeparators[0].Attribute("insertBeforeMso") != "Cut" ||
@@ -371,6 +371,8 @@ namespace Schnellbausteine.Tests
                     hasDynamicCallSites ||
                     referencesDynamicBinder ||
                     type.GetMethod("CanSaveSelection") != null ||
+                    type.GetMethod("ShowBetaDownload") == null ||
+                    type.GetMethod("GetFeatureEnabled") == null ||
                     selectionMethod == null ||
                     type.GetMethod("SaveSelection") == null ||
                     type.GetMethod("GetSnippetCount") != null ||

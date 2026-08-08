@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Windows.Forms;
 using System.Xml.Linq;
 using Schnellbausteine.AddIn;
@@ -13,6 +14,42 @@ namespace Schnellbausteine.Tests
 {
     internal static class OneNoteClientHarness
     {
+        private sealed class FakeClock : ILocalClock
+        {
+            public DateTimeOffset Value;
+
+            public DateTimeOffset LocalNow
+            {
+                get { return Value; }
+            }
+        }
+
+        private sealed class FakeNoticePresenter : IBetaNoticePresenter
+        {
+            public readonly AutoResetEvent Shown = new AutoResetEvent(false);
+            public int Count;
+            public BetaStatus Status;
+
+            public void Show(BetaStatus status, IntPtr ownerHandle)
+            {
+                Status = status;
+                Interlocked.Increment(ref Count);
+                Shown.Set();
+            }
+        }
+
+        private sealed class FakeWebsiteLauncher : IWebsiteLauncher
+        {
+            public Uri Website;
+            public Exception Exception;
+
+            public void Open(Uri website)
+            {
+                Website = website;
+                if (Exception != null) throw Exception;
+            }
+        }
+
         private sealed class FakeApplication : IOneNoteApplicationAdapter
         {
             public readonly List<string> Calls;
@@ -208,7 +245,17 @@ namespace Schnellbausteine.Tests
                 MinimizedTargetIsRestoredBeforeActivation();
                 RejectedActivationDoesNotFailInsert();
                 BinaryCallbacksUseCapturedPageOnClientThread();
-                Console.WriteLine("13/13 OneNote-Client-Harness-Tests erfolgreich.");
+                ExpirationPolicyUsesExactLocalBoundaries();
+                StartupNoticeIsDeferredOncePerLifecycle();
+                StartupNoticeIsAbsentBeforeWarningPeriod();
+                ExpiredStartupNoticeIsDeferred();
+                ShutdownCancelsQueuedStartupNotice();
+                ExpiredActionsAreBlockedBeforeCommandBodies();
+                WarningActionsRemainEnabled();
+                ExpiredMenuHidesNamesAndStaleItemsAreBlocked();
+                ExpiredDownloadCallbackShowsNotice();
+                WebsiteUsesExactHttpsUriAndSurfacesErrors();
+                Console.WriteLine("23/23 OneNote-Client-Harness-Tests erfolgreich.");
                 return 0;
             }
             catch (Exception exception)
@@ -516,6 +563,340 @@ namespace Schnellbausteine.Tests
                 Equal("opaque-data", client.ReadBinary("ink-callback"));
             }
             Equal("binary:page-id:ink-callback", string.Join(",", calls));
+        }
+
+        private static void ExpirationPolicyUsesExactLocalBoundaries()
+        {
+            var clock = new FakeClock();
+            var policy = new ExpirationPolicy(clock);
+
+            clock.Value = new DateTimeOffset(
+                2026, 11, 30, 23, 59, 59, 999, TimeSpan.FromHours(14));
+            Equal(BetaStatus.Active, policy.CurrentStatus);
+            Equal(true, policy.AllowsFeatures);
+
+            clock.Value = new DateTimeOffset(
+                2026, 12, 1, 0, 0, 0, TimeSpan.FromHours(-8));
+            Equal(BetaStatus.Warning, policy.CurrentStatus);
+            Equal(true, policy.AllowsFeatures);
+
+            clock.Value = new DateTimeOffset(
+                2026, 12, 31, 23, 59, 59, 999, TimeSpan.FromHours(14));
+            Equal(BetaStatus.Warning, policy.CurrentStatus);
+            Equal(true, policy.AllowsFeatures);
+
+            clock.Value = new DateTimeOffset(
+                2027, 1, 1, 0, 0, 0, TimeSpan.FromHours(-8));
+            Equal(BetaStatus.Expired, policy.CurrentStatus);
+            Equal(false, policy.AllowsFeatures);
+        }
+
+        private static void StartupNoticeIsDeferredOncePerLifecycle()
+        {
+            WithTemporaryRepository(delegate(SnippetRepository repository)
+            {
+                var clock = new FakeClock
+                {
+                    Value = new DateTimeOffset(
+                        2026, 12, 1, 0, 0, 0, TimeSpan.FromHours(1))
+                };
+                var presenter = new FakeNoticePresenter();
+                var addIn = new Schnellbausteine.AddIn.AddIn(
+                    repository,
+                    new ExpirationPolicy(clock),
+                    presenter);
+                try
+                {
+                    Array custom = new object[0];
+                    addIn.OnStartupComplete(ref custom);
+                    Equal(0, presenter.Count);
+                    Equal(true, presenter.Shown.WaitOne(TimeSpan.FromSeconds(5)));
+                    Equal(BetaStatus.Warning, presenter.Status);
+
+                    addIn.OnStartupComplete(ref custom);
+                    Equal(false, presenter.Shown.WaitOne(TimeSpan.FromMilliseconds(300)));
+                    Equal(1, presenter.Count);
+                }
+                finally
+                {
+                    Disconnect(addIn);
+                    presenter.Shown.Dispose();
+                }
+            });
+        }
+
+        private static void StartupNoticeIsAbsentBeforeWarningPeriod()
+        {
+            WithTemporaryRepository(delegate(SnippetRepository repository)
+            {
+                var clock = new FakeClock
+                {
+                    Value = new DateTimeOffset(
+                        2026, 11, 30, 23, 59, 59, 999, TimeSpan.Zero)
+                };
+                var presenter = new FakeNoticePresenter();
+                var addIn = new Schnellbausteine.AddIn.AddIn(
+                    repository,
+                    new ExpirationPolicy(clock),
+                    presenter);
+                try
+                {
+                    Array custom = new object[0];
+                    addIn.OnStartupComplete(ref custom);
+                    Equal(false, presenter.Shown.WaitOne(TimeSpan.FromMilliseconds(300)));
+                    Equal(0, presenter.Count);
+                }
+                finally
+                {
+                    Disconnect(addIn);
+                    presenter.Shown.Dispose();
+                }
+            });
+        }
+
+        private static void ExpiredActionsAreBlockedBeforeCommandBodies()
+        {
+            WithTemporaryRepository(delegate(SnippetRepository repository)
+            {
+                var clock = new FakeClock
+                {
+                    Value = new DateTimeOffset(2027, 1, 1, 0, 0, 0, TimeSpan.Zero)
+                };
+                var presenter = new FakeNoticePresenter();
+                var addIn = new Schnellbausteine.AddIn.AddIn(
+                    repository,
+                    new ExpirationPolicy(clock),
+                    presenter);
+                int commandCalls = 0;
+                SetAction(addIn, "saveSelectionAction", new Action<IntPtr>(
+                    delegate { Interlocked.Increment(ref commandCalls); }));
+                SetAction(addIn, "manageSnippetsAction", new Action<IntPtr>(
+                    delegate { Interlocked.Increment(ref commandCalls); }));
+                try
+                {
+                    Equal(false, addIn.GetFeatureEnabled(null));
+                    addIn.SaveSelection(null);
+                    Equal(true, presenter.Shown.WaitOne(TimeSpan.FromSeconds(5)));
+                    addIn.ManageSnippets(null);
+                    Equal(true, presenter.Shown.WaitOne(TimeSpan.FromSeconds(5)));
+                    Equal(0, commandCalls);
+                    Equal(2, presenter.Count);
+                }
+                finally
+                {
+                    Disconnect(addIn);
+                    presenter.Shown.Dispose();
+                }
+            });
+        }
+
+        private static void ExpiredStartupNoticeIsDeferred()
+        {
+            WithTemporaryRepository(delegate(SnippetRepository repository)
+            {
+                var clock = new FakeClock
+                {
+                    Value = new DateTimeOffset(2027, 1, 1, 0, 0, 0, TimeSpan.Zero)
+                };
+                var presenter = new FakeNoticePresenter();
+                var addIn = new Schnellbausteine.AddIn.AddIn(
+                    repository,
+                    new ExpirationPolicy(clock),
+                    presenter);
+                try
+                {
+                    Array custom = new object[0];
+                    addIn.OnStartupComplete(ref custom);
+                    Equal(0, presenter.Count);
+                    Equal(true, presenter.Shown.WaitOne(TimeSpan.FromSeconds(5)));
+                    Equal(BetaStatus.Expired, presenter.Status);
+                }
+                finally
+                {
+                    Disconnect(addIn);
+                    presenter.Shown.Dispose();
+                }
+            });
+        }
+
+        private static void ShutdownCancelsQueuedStartupNotice()
+        {
+            WithTemporaryRepository(delegate(SnippetRepository repository)
+            {
+                var clock = new FakeClock
+                {
+                    Value = new DateTimeOffset(2026, 12, 1, 0, 0, 0, TimeSpan.Zero)
+                };
+                var presenter = new FakeNoticePresenter();
+                var addIn = new Schnellbausteine.AddIn.AddIn(
+                    repository,
+                    new ExpirationPolicy(clock),
+                    presenter);
+                try
+                {
+                    Array custom = new object[0];
+                    addIn.OnStartupComplete(ref custom);
+                    addIn.OnBeginShutdown(ref custom);
+                    Equal(false, presenter.Shown.WaitOne(TimeSpan.FromMilliseconds(400)));
+                    Equal(0, presenter.Count);
+                }
+                finally
+                {
+                    Disconnect(addIn);
+                    presenter.Shown.Dispose();
+                }
+            });
+        }
+
+        private static void WarningActionsRemainEnabled()
+        {
+            WithTemporaryRepository(delegate(SnippetRepository repository)
+            {
+                var clock = new FakeClock
+                {
+                    Value = new DateTimeOffset(2026, 12, 31, 23, 59, 59, 999, TimeSpan.Zero)
+                };
+                var presenter = new FakeNoticePresenter();
+                var addIn = new Schnellbausteine.AddIn.AddIn(
+                    repository,
+                    new ExpirationPolicy(clock),
+                    presenter);
+                var called = new AutoResetEvent(false);
+                SetAction(addIn, "saveSelectionAction", new Action<IntPtr>(
+                    delegate { called.Set(); }));
+                try
+                {
+                    Equal(true, addIn.GetFeatureEnabled(null));
+                    addIn.SaveSelection(null);
+                    Equal(true, called.WaitOne(TimeSpan.FromSeconds(5)));
+                    Equal(0, presenter.Count);
+                }
+                finally
+                {
+                    Disconnect(addIn);
+                    called.Dispose();
+                    presenter.Shown.Dispose();
+                }
+            });
+        }
+
+        private static void ExpiredMenuHidesNamesAndStaleItemsAreBlocked()
+        {
+            WithTemporaryRepository(delegate(SnippetRepository repository)
+            {
+                repository.Save("Vertraulicher Name", Fragment(), false);
+                var clock = new FakeClock
+                {
+                    Value = new DateTimeOffset(2026, 12, 31, 23, 0, 0, TimeSpan.Zero)
+                };
+                var presenter = new FakeNoticePresenter();
+                var addIn = new Schnellbausteine.AddIn.AddIn(
+                    repository,
+                    new ExpirationPolicy(clock),
+                    presenter);
+                var menu = new SnippetMenuModel(repository);
+                XDocument active = XDocument.Parse(
+                    menu.RefreshAndGetContent("sqMain"));
+                string staleId = (string)active.Root.Elements().First().Attribute("id");
+                SetField(addIn, "menu", menu);
+                clock.Value = new DateTimeOffset(2027, 1, 1, 0, 0, 0, TimeSpan.Zero);
+                int insertCalls = 0;
+                SetAction(
+                    addIn,
+                    "insertSnippetAction",
+                    new Action<Snippet, IntPtr>(
+                        delegate { Interlocked.Increment(ref insertCalls); }));
+                try
+                {
+                    string expiredXml = addIn.GetSnippetMenuContent(null);
+                    XDocument expired = XDocument.Parse(expiredXml);
+                    XElement[] items = expired.Root.Elements().ToArray();
+                    Equal(1, items.Length);
+                    Equal("Aktuelle Version herunterladen...",
+                        (string)items[0].Attribute("label"));
+                    Equal("ShowBetaDownload", (string)items[0].Attribute("onAction"));
+                    Equal(false, expiredXml.Contains("Vertraulicher Name"));
+
+                    addIn.InsertSnippet(null);
+                    Equal(true, presenter.Shown.WaitOne(TimeSpan.FromSeconds(5)));
+                    Equal(0, insertCalls);
+                    Throws<InvalidOperationException>(
+                        delegate { menu.GetSnippet(staleId); });
+                }
+                finally
+                {
+                    Disconnect(addIn);
+                    presenter.Shown.Dispose();
+                }
+            });
+        }
+
+        private static void WebsiteUsesExactHttpsUriAndSurfacesErrors()
+        {
+            var launcher = new FakeWebsiteLauncher();
+            Exception visibleError = null;
+            BetaWebsite.Open(launcher, delegate(Exception exception)
+            {
+                visibleError = exception;
+            });
+            Equal("https://www.malter365.de/", launcher.Website.AbsoluteUri);
+            Equal(null, visibleError);
+
+            launcher.Exception = new InvalidOperationException("browser failed");
+            BetaWebsite.Open(launcher, delegate(Exception exception)
+            {
+                visibleError = exception;
+            });
+            Equal(launcher.Exception, visibleError);
+        }
+
+        private static void ExpiredDownloadCallbackShowsNotice()
+        {
+            WithTemporaryRepository(delegate(SnippetRepository repository)
+            {
+                var clock = new FakeClock
+                {
+                    Value = new DateTimeOffset(2027, 1, 1, 0, 0, 0, TimeSpan.Zero)
+                };
+                var presenter = new FakeNoticePresenter();
+                var addIn = new Schnellbausteine.AddIn.AddIn(
+                    repository,
+                    new ExpirationPolicy(clock),
+                    presenter);
+                try
+                {
+                    addIn.ShowBetaDownload(null);
+                    Equal(true, presenter.Shown.WaitOne(TimeSpan.FromSeconds(5)));
+                    Equal(BetaStatus.Expired, presenter.Status);
+                    Equal(1, presenter.Count);
+                }
+                finally
+                {
+                    Disconnect(addIn);
+                    presenter.Shown.Dispose();
+                }
+            });
+        }
+
+        private static void SetAction(object instance, string fieldName, object action)
+        {
+            SetField(instance, fieldName, action);
+        }
+
+        private static void SetField(object instance, string fieldName, object value)
+        {
+            instance.GetType().GetField(
+                fieldName,
+                System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.NonPublic).SetValue(instance, value);
+        }
+
+        private static void Disconnect(Schnellbausteine.AddIn.AddIn addIn)
+        {
+            Array custom = new object[0];
+            addIn.OnDisconnection(
+                Extensibility.ext_DisconnectMode.ext_dm_HostShutdown,
+                ref custom);
         }
 
         private static OneNoteClient CreateClient(

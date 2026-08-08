@@ -24,6 +24,8 @@ namespace Schnellbausteine.AddIn
     {
         private readonly SnippetRepository repository;
         private readonly SnippetMenuModel menu;
+        private readonly ExpirationPolicy expirationPolicy;
+        private readonly IBetaNoticePresenter betaNoticePresenter;
         private static readonly string[] SnippetMenuControlIds =
         {
             "sqMain",
@@ -38,16 +40,37 @@ namespace Schnellbausteine.AddIn
         private Action<IntPtr> manageSnippetsAction;
         private IRibbonUI ribbonUi;
         private int operationActive;
+        private int startupNoticeQueued;
+        private int noticeActive;
+        private int shuttingDown;
 
         public AddIn()
-            : this(new SnippetRepository(SnippetRepository.DefaultRoot))
+            : this(
+                new SnippetRepository(SnippetRepository.DefaultRoot),
+                new ExpirationPolicy(new SystemLocalClock()),
+                new WinFormsBetaNoticePresenter(new ShellWebsiteLauncher()))
         {
         }
 
         internal AddIn(SnippetRepository repository)
+            : this(
+                repository,
+                new ExpirationPolicy(new SystemLocalClock()),
+                new WinFormsBetaNoticePresenter(new ShellWebsiteLauncher()))
+        {
+        }
+
+        internal AddIn(
+            SnippetRepository repository,
+            ExpirationPolicy expirationPolicy,
+            IBetaNoticePresenter betaNoticePresenter)
         {
             if (repository == null) throw new ArgumentNullException("repository");
+            if (expirationPolicy == null) throw new ArgumentNullException("expirationPolicy");
+            if (betaNoticePresenter == null) throw new ArgumentNullException("betaNoticePresenter");
             this.repository = repository;
+            this.expirationPolicy = expirationPolicy;
+            this.betaNoticePresenter = betaNoticePresenter;
             menu = new SnippetMenuModel(repository);
             saveSelectionAction = SaveSelectionCore;
             insertSnippetAction = InsertSnippetCore;
@@ -66,17 +89,29 @@ namespace Schnellbausteine.AddIn
 
         public void OnStartupComplete(ref Array custom)
         {
-            Log.Trace("addin.startup", "complete");
+            Log.Trace("addin.startup", "entry");
+            var callbackBodyCompleted = new TaskCompletionSource<object>();
+            try
+            {
+                QueueStartupNotice(callbackBodyCompleted.Task);
+            }
+            finally
+            {
+                callbackBodyCompleted.SetResult(null);
+                Log.Trace("addin.startup", "exit");
+            }
         }
 
         public void OnBeginShutdown(ref Array custom)
         {
+            Interlocked.Exchange(ref shuttingDown, 1);
             Log.Trace("addin.shutdown", "begin");
         }
 
         public void OnDisconnection(ext_DisconnectMode removeMode, ref Array custom)
         {
             Log.Trace("addin.disconnection", "entry");
+            Interlocked.Exchange(ref shuttingDown, 1);
             bool dispatcherStopped = dispatcher.Shutdown(TimeSpan.FromSeconds(5));
             if (!dispatcherStopped)
             {
@@ -133,6 +168,7 @@ namespace Schnellbausteine.AddIn
                     "SaveSelection",
                     callbackBodyCompleted.Task,
                     "Der Schnellbaustein konnte nicht gespeichert werden.",
+                    true,
                     saveSelectionAction);
             }
             finally
@@ -140,6 +176,12 @@ namespace Schnellbausteine.AddIn
                 callbackBodyCompleted.SetResult(null);
                 Log.Trace("callback.SaveSelection", "exit");
             }
+        }
+
+        public bool GetFeatureEnabled(IRibbonControl control)
+        {
+            Log.Trace("callback.GetFeatureEnabled", "entry-no-com");
+            return expirationPolicy.AllowsFeatures;
         }
 
         private void SaveSelectionCore(IntPtr fallbackOwnerHandle)
@@ -201,22 +243,18 @@ namespace Schnellbausteine.AddIn
         public string GetSnippetMenuContent(IRibbonControl control)
         {
             Log.Trace("callback.GetSnippetMenuContent", "entry-no-com");
+            if (!expirationPolicy.AllowsFeatures)
+            {
+                menu.Invalidate();
+                return SnippetMenuModel.GetExpiredContent();
+            }
             return menu.RefreshAndGetContent(control == null ? null : control.Id);
         }
 
         public void InsertSnippet(IRibbonControl control)
         {
             Log.Trace("callback.InsertSnippet", "entry");
-            Snippet snippet = null;
-            Exception itemException = null;
-            try
-            {
-                snippet = menu.GetSnippet(control == null ? null : control.Id);
-            }
-            catch (Exception exception)
-            {
-                itemException = exception;
-            }
+            string controlId = control == null ? null : control.Id;
             var callbackBodyCompleted = new TaskCompletionSource<object>();
             try
             {
@@ -224,10 +262,10 @@ namespace Schnellbausteine.AddIn
                     "InsertSnippet",
                     callbackBodyCompleted.Task,
                     "Der Schnellbaustein konnte nicht eingefügt werden.",
+                    true,
                     delegate(IntPtr ownerHandle)
                     {
-                        if (itemException != null) throw itemException;
-                        insertSnippetAction(snippet, ownerHandle);
+                        insertSnippetAction(menu.GetSnippet(controlId), ownerHandle);
                     });
             }
             finally
@@ -274,12 +312,36 @@ namespace Schnellbausteine.AddIn
                     "ManageSnippets",
                     callbackBodyCompleted.Task,
                     "Die Schnellbausteine-Verwaltung konnte nicht geöffnet werden.",
+                    true,
                     manageSnippetsAction);
             }
             finally
             {
                 callbackBodyCompleted.SetResult(null);
                 Log.Trace("callback.ManageSnippets", "exit");
+            }
+        }
+
+        public void ShowBetaDownload(IRibbonControl control)
+        {
+            Log.Trace("callback.ShowBetaDownload", "entry");
+            var callbackBodyCompleted = new TaskCompletionSource<object>();
+            try
+            {
+                DispatchUserAction(
+                    "ShowBetaDownload",
+                    callbackBodyCompleted.Task,
+                    "Der Download-Hinweis konnte nicht geöffnet werden.",
+                    false,
+                    delegate(IntPtr ownerHandle)
+                    {
+                        ShowBetaNotice(BetaStatus.Expired, ownerHandle);
+                    });
+            }
+            finally
+            {
+                callbackBodyCompleted.SetResult(null);
+                Log.Trace("callback.ShowBetaDownload", "exit");
             }
         }
 
@@ -308,7 +370,11 @@ namespace Schnellbausteine.AddIn
         }
 
         private void DispatchUserAction(
-            string operation, Task callbackBodyCompleted, string errorMessage, Action<IntPtr> action)
+            string operation,
+            Task callbackBodyCompleted,
+            string errorMessage,
+            bool blockWhenExpired,
+            Action<IntPtr> action)
         {
             Log.Trace("dispatch." + operation, "entry");
             if (Interlocked.CompareExchange(ref operationActive, 1, 0) != 0)
@@ -327,7 +393,15 @@ namespace Schnellbausteine.AddIn
                         Log.Trace("dispatch." + operation, "action.entry");
                         try
                         {
-                            action(ownerHandle);
+                            BetaStatus status = expirationPolicy.CurrentStatus;
+                            if (blockWhenExpired && status == BetaStatus.Expired)
+                            {
+                                ShowBetaNotice(status, ownerHandle);
+                            }
+                            else
+                            {
+                                action(ownerHandle);
+                            }
                         }
                         catch (Exception exception)
                         {
@@ -353,6 +427,43 @@ namespace Schnellbausteine.AddIn
             Log.Trace("dispatch." + operation, "exit");
         }
 
+        private void QueueStartupNotice(Task callbackBodyCompleted)
+        {
+            BetaStatus status = expirationPolicy.CurrentStatus;
+            if (status == BetaStatus.Active) return;
+            if (Interlocked.CompareExchange(ref startupNoticeQueued, 1, 0) != 0) return;
+
+            IntPtr ownerHandle = NativeMethods.GetForegroundWindow();
+            dispatcher.PostAfterCallback(
+                callbackBodyCompleted,
+                delegate
+                {
+                    if (Interlocked.CompareExchange(ref shuttingDown, 0, 0) != 0) return;
+                    BetaStatus currentStatus = expirationPolicy.CurrentStatus;
+                    if (currentStatus != BetaStatus.Active)
+                    {
+                        ShowBetaNotice(currentStatus, ownerHandle);
+                    }
+                },
+                delegate(Exception exception)
+                {
+                    Log.Error("Der Beta-Hinweis konnte nicht geöffnet werden.", exception);
+                });
+        }
+
+        private void ShowBetaNotice(BetaStatus status, IntPtr ownerHandle)
+        {
+            if (Interlocked.CompareExchange(ref noticeActive, 1, 0) != 0) return;
+            try
+            {
+                betaNoticePresenter.Show(status, ownerHandle);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref noticeActive, 0);
+            }
+        }
+
         private static void ShowError(string message, Exception exception, IntPtr ownerHandle)
         {
             Log.Error(message, exception);
@@ -374,6 +485,7 @@ namespace Schnellbausteine.AddIn
         private static readonly XNamespace Ribbon =
             "http://schemas.microsoft.com/office/2009/07/customui";
         private const string EmptyLabel = "Keine Schnellbausteine gespeichert";
+        private const string ExpiredLabel = "Aktuelle Version herunterladen...";
         private readonly SnippetRepository repository;
         private readonly object gate = new object();
         private readonly IDictionary<string, IDictionary<string, Snippet>> snapshots =
@@ -395,6 +507,7 @@ namespace Schnellbausteine.AddIn
                     throw new InvalidOperationException(
                         "Die Schnellbaustein-Menüinstanz ist nicht eindeutig.");
                 }
+
                 IList<Snippet> snippets = repository.GetAll()
                     .OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
                     .ToList();
@@ -436,6 +549,19 @@ namespace Schnellbausteine.AddIn
                 valid = true;
                 return content.ToString(SaveOptions.DisableFormatting);
             }
+        }
+
+        public static string GetExpiredContent()
+        {
+            string generation = Guid.NewGuid().ToString("N");
+            var content = new XElement(
+                Ribbon + "menu",
+                new XElement(
+                    Ribbon + "button",
+                    new XAttribute("id", "sqExpired_" + generation),
+                    new XAttribute("label", ExpiredLabel),
+                    new XAttribute("onAction", "ShowBetaDownload")));
+            return content.ToString(SaveOptions.DisableFormatting);
         }
 
         public Snippet GetSnippet(string controlId)

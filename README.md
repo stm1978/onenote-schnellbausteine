@@ -28,7 +28,7 @@ kopierten OneMore-Quellcode.
 > gewohnt synchronisieren bzw. sichern.
 
 1. Im Release
-   [**OneNote Schnellbausteine – Beta 0.2**](https://github.com/stm1978/onenote-schnellbausteine/releases/tag/v0.2.0-beta.2)
+   [**OneNote Schnellbausteine – Beta 0.2**](https://github.com/stm1978/onenote-schnellbausteine/releases/tag/v0.2.0-beta.3)
    die Datei **`OneNote-Schnellbausteine-Setup-Beta-0.2.exe`** herunterladen.
 2. OneNote vollständig schließen.
 3. Die heruntergeladene Setup-Datei doppelklicken und **Installieren** wählen.
@@ -46,6 +46,13 @@ Die Deinstallation erfolgt wie bei anderen Windows-Programmen unter
 Gespeicherte Schnellbausteine unter
 `%LOCALAPPDATA%\Schnellbausteine\Data` bleiben bei der Deinstallation
 standardmäßig erhalten.
+
+Die Beta kann bis einschließlich **31. Dezember 2026** vollständig verwendet
+werden. Ab dem 1. Dezember 2026 erscheint bei jedem Add-in-Start ein Hinweis auf
+das Ablaufdatum. Ab dem 1. Januar 2027 sind die Add-in-Funktionen gesperrt; die
+aktuelle Version kann unter [malter365.de](https://www.malter365.de/)
+heruntergeladen werden. Lokale Schnellbausteine werden durch Ablauf, Upgrade
+oder Deinstallation weder gelöscht noch verändert.
 
 > Die Vorabversion ist noch nicht digital signiert. Windows SmartScreen kann
 > deshalb beim ersten Start **Weitere Informationen > Trotzdem ausführen**
@@ -229,6 +236,13 @@ Damit folgt der Einfügepfad wie OneMores öffentlich beschriebenes
 `SelectionRange`-/`PageEditor.InsertOrReplace`-Muster einer expliziten
 Selection-Range statt einer globalen Outline-Suche, ohne OneMore-Code zu
 übernehmen.
+
+Die Beta-Laufzeit wird ausschließlich anhand der lokalen Windows-Kalenderzeit
+durch eine zentrale Policy bestimmt. Es gibt keine Netzwerkprüfung, Telemetrie
+oder persistierte Uhrzeitkontrolle. Der Start-Hinweis wird erst nach Rückkehr aus
+dem COM-Lifecycle-Callback auf den bestehenden UI-STA gestellt. Nach Ablauf
+prüfen sämtliche Aktionen die Policy erneut, bevor Repository-, OneNote-COM-
+oder Fachdialogzugriffe stattfinden.
 
 ### Experimenteller OneNote-Realtest
 
