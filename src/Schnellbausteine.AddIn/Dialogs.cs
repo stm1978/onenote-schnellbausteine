@@ -55,7 +55,7 @@ namespace Schnellbausteine.AddIn
 
         public InsertDialog(IList<Snippet> snippets)
         {
-            Text = "Schnellbaustein einfugen";
+            Text = "Schnellbaustein einfügen";
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(420, 280);
             Size = new Size(520, 360);
@@ -82,7 +82,7 @@ namespace Schnellbausteine.AddIn
             };
             var insert = new Button
             {
-                Text = "Einfugen",
+                Text = "Einfügen",
                 Width = 90,
                 DialogResult = DialogResult.OK,
                 Enabled = snippets.Count > 0
@@ -125,8 +125,8 @@ namespace Schnellbausteine.AddIn
 
             list = new ListBox { Dock = DockStyle.Fill, DisplayMember = "Name" };
             var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 46, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(6) };
-            var close = new Button { Text = "Schliessen", Width = 90, DialogResult = DialogResult.OK };
-            var delete = new Button { Text = "Loschen", Width = 90 };
+            var close = new Button { Text = "Schließen", Width = 90, DialogResult = DialogResult.OK };
+            var delete = new Button { Text = "Löschen", Width = 90 };
             var rename = new Button { Text = "Umbenennen", Width = 100 };
             delete.Click += Delete;
             rename.Click += Rename;
@@ -170,7 +170,7 @@ namespace Schnellbausteine.AddIn
                     }
                     catch (Exception exception)
                     {
-                        MessageBox.Show(this, exception.Message, "Umbenennen nicht moglich", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        MessageBox.Show(this, exception.Message, "Umbenennen nicht möglich", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     }
                 }
             }
@@ -180,7 +180,7 @@ namespace Schnellbausteine.AddIn
         {
             Snippet item = Selected;
             if (item == null) return;
-            if (MessageBox.Show(this, "Schnellbaustein \"" + item.Name + "\" wirklich loschen?", "Loschen bestatigen",
+            if (MessageBox.Show(this, "Schnellbaustein \"" + item.Name + "\" wirklich löschen?", "Löschen bestätigen",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
             repository.Delete(item.Id);
             LoadItems();

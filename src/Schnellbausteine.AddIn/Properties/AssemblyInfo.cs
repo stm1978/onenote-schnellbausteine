@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("Schnellbausteine.AddIn")]
-[assembly: AssemblyDescription("Schnellbausteine fur OneNote Desktop")]
+[assembly: AssemblyDescription("Schnellbausteine für OneNote Desktop")]
 [assembly: AssemblyCompany("Schnellbausteine")]
 [assembly: AssemblyProduct("Schnellbausteine")]
 [assembly: AssemblyCopyright("Copyright (c) 2026")]

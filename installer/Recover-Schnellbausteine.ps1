@@ -1,4 +1,4 @@
-param(
+﻿param(
     [switch]$KeepProgramFiles
 )
 
@@ -35,7 +35,7 @@ Write-Host "Schnellbausteine wurde in OneNote deaktiviert." -ForegroundColor Gre
 
 $oneNote = Get-Process ONENOTE -ErrorAction SilentlyContinue
 if ($oneNote) {
-    Write-Warning "OneNote lauft noch. Beenden Sie den haengenden Prozess im Task-Manager und starten Sie dieses Skript danach erneut, um die Programmdateien zu entfernen."
+    Write-Warning "OneNote läuft noch. Beenden Sie den hängenden Prozess im Task-Manager und starten Sie dieses Skript danach erneut, um die Programmdateien zu entfernen."
 }
 elseif (-not $KeepProgramFiles) {
     $uninstaller = Join-Path $appRoot "unins000.exe"

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Schnellbausteine.Core;
 
@@ -39,6 +40,14 @@ namespace Schnellbausteine.Tests
             RichSelectionPreservesSiblings,
             QuickStylesAreCapturedAndRemapped,
             SpecialCursorUsesSafeFallback,
+            PostInsertCaretIsExactForTextCursor,
+            PostInsertCaretIsExactForRange,
+            PostInsertCaretIsExactForBlock,
+            PostInsertCaretIsExactForTable,
+            PostInsertCaretIsExactForList,
+            PostInsertCaretIsExactForImage,
+            PostInsertCaretIsExactForMultipleParagraphs,
+            UserInterfaceStringsUseGermanDiacritics,
             MissingSelectionIsRejectedWithoutMutation,
             AmbiguousSelectionIsRejectedWithoutMutation,
             PartialBlockWithoutDescendantIsRejected
@@ -474,6 +483,210 @@ namespace Schnellbausteine.Tests
                 "</one:OEChildren></one:Outline>"), page);
         }
 
+        private static void PostInsertCaretIsExactForTextCursor()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE selected=\"partial\">" +
+                "<one:T><![CDATA[vor]]></one:T><one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "<one:T><![CDATA[nach]]></one:T></one:OE></one:OEChildren></one:Outline>");
+
+            OneNoteXml.InsertAtSelection(
+                page,
+                Fragment("<one:OE><one:T><![CDATA[Text]]></one:T></one:OE>"));
+
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren><one:OE>" +
+                "<one:T><![CDATA[vor]]></one:T><one:T><![CDATA[Text]]></one:T>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[nach]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>"), page);
+            AssertSinglePostInsertCaret(page);
+        }
+
+        private static void PostInsertCaretIsExactForRange()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE selected=\"partial\">" +
+                "<one:T><![CDATA[vor]]></one:T><one:T selected=\"partial\"><![CDATA[alt]]></one:T>" +
+                "<one:T><![CDATA[nach]]></one:T></one:OE></one:OEChildren></one:Outline>");
+
+            OneNoteXml.InsertAtSelection(
+                page,
+                Fragment("<one:OE><one:T><![CDATA[Text]]></one:T></one:OE>"));
+
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren><one:OE>" +
+                "<one:T><![CDATA[vor]]></one:T><one:T><![CDATA[Text]]></one:T>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[nach]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>"), page);
+            AssertSinglePostInsertCaret(page);
+        }
+
+        private static void PostInsertCaretIsExactForBlock()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE selected=\"partial\">" +
+                "<one:T><![CDATA[vor]]></one:T><one:T selected=\"all\"><![CDATA[alt]]></one:T>" +
+                "<one:T><![CDATA[nach]]></one:T></one:OE></one:OEChildren></one:Outline>");
+
+            OneNoteXml.InsertAtSelection(
+                page,
+                Fragment("<one:OE><one:Table><one:Row><one:Cell><one:OEChildren>" +
+                    "<one:OE><one:T><![CDATA[Tabelle]]></one:T></one:OE>" +
+                    "</one:OEChildren></one:Cell></one:Row></one:Table></one:OE>"));
+
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren>" +
+                "<one:OE><one:T><![CDATA[vor]]></one:T></one:OE>" +
+                "<one:OE><one:Table><one:Row><one:Cell><one:OEChildren>" +
+                "<one:OE><one:T><![CDATA[Tabelle]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Cell></one:Row></one:Table></one:OE>" +
+                "<one:OE><one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "<one:T><![CDATA[nach]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>"), page);
+            AssertSinglePostInsertCaret(page);
+        }
+
+        private static void PostInsertCaretIsExactForTable()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE><one:Table><one:Row>" +
+                "<one:Cell selected=\"partial\"><one:OEChildren><one:OE>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Cell>" +
+                "</one:Row></one:Table></one:OE></one:OEChildren></one:Outline>");
+
+            OneNoteXml.InsertAtSelection(
+                page,
+                Fragment("<one:OE><one:Table><one:Row><one:Cell><one:OEChildren>" +
+                    "<one:OE><one:T><![CDATA[innen]]></one:T></one:OE>" +
+                    "</one:OEChildren></one:Cell></one:Row></one:Table></one:OE>"));
+
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren><one:OE><one:Table><one:Row>" +
+                "<one:Cell><one:OEChildren>" +
+                "<one:OE><one:Table><one:Row><one:Cell><one:OEChildren>" +
+                "<one:OE><one:T><![CDATA[innen]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Cell></one:Row></one:Table></one:OE>" +
+                "<one:OE><one:T selected=\"all\"><![CDATA[]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Cell>" +
+                "</one:Row></one:Table></one:OE></one:OEChildren></one:Outline>"), page);
+            AssertSinglePostInsertCaret(page);
+        }
+
+        private static void PostInsertCaretIsExactForList()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE selected=\"partial\">" +
+                "<one:List><one:Bullet bullet=\"2\"/></one:List>" +
+                "<one:T><![CDATA[vor]]></one:T><one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+
+            OneNoteXml.InsertAtSelection(
+                page,
+                Fragment("<one:OE><one:T><![CDATA[Listentext]]></one:T></one:OE>"));
+
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren><one:OE>" +
+                "<one:List><one:Bullet bullet=\"2\"/></one:List>" +
+                "<one:T><![CDATA[vor]]></one:T><one:T><![CDATA[Listentext]]></one:T>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>"), page);
+            AssertSinglePostInsertCaret(page);
+        }
+
+        private static void PostInsertCaretIsExactForImage()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE selected=\"partial\">" +
+                "<one:T><![CDATA[vor]]></one:T><one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "<one:T><![CDATA[nach]]></one:T></one:OE></one:OEChildren></one:Outline>");
+
+            OneNoteXml.InsertAtSelection(
+                page,
+                Fragment("<one:OE><one:Image format=\"png\"><one:Data>BASE64</one:Data></one:Image></one:OE>"));
+
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren>" +
+                "<one:OE><one:T><![CDATA[vor]]></one:T></one:OE>" +
+                "<one:OE><one:Image format=\"png\"><one:Data>BASE64</one:Data></one:Image></one:OE>" +
+                "<one:OE><one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "<one:T><![CDATA[nach]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>"), page);
+            AssertSinglePostInsertCaret(page);
+        }
+
+        private static void PostInsertCaretIsExactForMultipleParagraphs()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE selected=\"partial\">" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+
+            OneNoteXml.InsertAtSelection(
+                page,
+                Fragment(
+                    "<one:OE><one:T><![CDATA[Absatz 1]]></one:T></one:OE>" +
+                    "<one:OE><one:T><![CDATA[Absatz 2]]></one:T></one:OE>"));
+
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren>" +
+                "<one:OE><one:T><![CDATA[Absatz 1]]></one:T></one:OE>" +
+                "<one:OE><one:T><![CDATA[Absatz 2]]></one:T></one:OE>" +
+                "<one:OE><one:T selected=\"all\"><![CDATA[]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>"), page);
+            AssertSinglePostInsertCaret(page);
+        }
+
+        private static void UserInterfaceStringsUseGermanDiacritics()
+        {
+            string root = FindRepositoryRoot();
+            string[] sourceFiles = Directory.GetFiles(
+                    Path.Combine(root, "src"),
+                    "*.*",
+                    SearchOption.AllDirectories)
+                .Concat(Directory.GetFiles(
+                    Path.Combine(root, "installer"),
+                    "*.*",
+                    SearchOption.AllDirectories))
+                .Where(path =>
+                    path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
+                    path.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) ||
+                    path.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase) ||
+                    path.EndsWith(".iss", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            var asciiReplacement = new Regex(
+                "\\b(ausfuhren|lauft|haengenden|Schliessen|schliessen|" +
+                "Loschen|loschen|Einfugen|einfugen|moglich|gultig|" +
+                "Anderungszeitpunkt|ausgewahlt|bestatigen|hochstens|" +
+                "enthalt|verfugbar|unterstutzt|prazise|unvollstandig|" +
+                "Binardaten|fur|Fur|uber|Uber|Uberschreiben|uberschreiben)\\b",
+                RegexOptions.CultureInvariant);
+
+            foreach (string path in sourceFiles)
+            {
+                string content = File.ReadAllText(path);
+                Match match = asciiReplacement.Match(content);
+                Assert(!match.Success,
+                    "ASCII-Ersatzschreibweise in " + path + ": " + match.Value);
+                if (path.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase) &&
+                    content.Any(character => character > 127))
+                {
+                    byte[] bytes = File.ReadAllBytes(path);
+                    Assert(bytes.Length >= 3 &&
+                        bytes[0] == 0xEF &&
+                        bytes[1] == 0xBB &&
+                        bytes[2] == 0xBF,
+                        "PowerShell-Skript mit Unicode-Text benötigt eine UTF-8-BOM: " + path);
+                }
+            }
+
+            string dialogs = File.ReadAllText(
+                Path.Combine(root, "src", "Schnellbausteine.AddIn", "Dialogs.cs"));
+            Assert(dialogs.Contains("\"Einfügen\""), "UI-Text Einfügen fehlt.");
+            Assert(dialogs.Contains("\"Löschen\""), "UI-Text Löschen fehlt.");
+            Assert(dialogs.Contains("\"Schließen\""), "UI-Text Schließen fehlt.");
+        }
+
         private static void QuickStylesAreCapturedAndRemapped()
         {
             XDocument source = Page(
@@ -556,6 +769,39 @@ namespace Schnellbausteine.Tests
         {
             return XDocument.Parse("<sq:Snippet xmlns:sq=\"" + OneNoteXml.Snippet + "\" xmlns:one=\"" + OneNoteXml.One + "\" version=\"1\"><sq:TagDefs>" +
                 definitions + "</sq:TagDefs><sq:QuickStyleDefs/><sq:Content>" + content + "</sq:Content></sq:Snippet>", LoadOptions.PreserveWhitespace);
+        }
+
+        private static void AssertSinglePostInsertCaret(XDocument page)
+        {
+            OneNoteXml.ValidatePostInsertCaret(page);
+            XElement caret = page.Descendants(OneNoteXml.One + "T")
+                .Single(element => (string)element.Attribute("selected") == "all");
+            Equal(string.Empty, caret.Value);
+            Equal("OE", caret.Parent.Name.LocalName);
+            Equal(1, page.Root.DescendantsAndSelf().Attributes("selected").Count());
+            Assert(page.ToString(SaveOptions.DisableFormatting)
+                .Contains("<![CDATA[]]>"), "Der serialisierte Cursoranker enthält kein leeres CDATA.");
+        }
+
+        private static string FindRepositoryRoot()
+        {
+            foreach (string start in new[]
+            {
+                Environment.CurrentDirectory,
+                AppDomain.CurrentDomain.BaseDirectory
+            })
+            {
+                DirectoryInfo directory = new DirectoryInfo(start);
+                while (directory != null)
+                {
+                    if (File.Exists(Path.Combine(directory.FullName, "Schnellbausteine.sln")))
+                    {
+                        return directory.FullName;
+                    }
+                    directory = directory.Parent;
+                }
+            }
+            throw new DirectoryNotFoundException("Repository-Wurzel wurde nicht gefunden.");
         }
 
         private static void XmlEqual(XDocument expected, XDocument actual)
