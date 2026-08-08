@@ -5,6 +5,16 @@ using Schnellbausteine.Core;
 
 namespace Schnellbausteine.AddIn
 {
+    internal sealed class WindowHandleOwner : IWin32Window
+    {
+        public WindowHandleOwner(IntPtr handle)
+        {
+            Handle = handle;
+        }
+
+        public IntPtr Handle { get; private set; }
+    }
+
     internal sealed class NameDialog : Form
     {
         private readonly TextBox nameBox;

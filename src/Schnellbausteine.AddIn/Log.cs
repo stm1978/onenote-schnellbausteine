@@ -21,5 +21,16 @@ namespace Schnellbausteine.AddIn
                     new UTF8Encoding(false));
             }
         }
+
+        public static void Info(string message)
+        {
+            lock (Gate)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(PathName));
+                File.AppendAllText(PathName,
+                    DateTime.Now.ToString("s") + " " + message + Environment.NewLine,
+                    new UTF8Encoding(false));
+            }
+        }
     }
 }

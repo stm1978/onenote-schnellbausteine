@@ -155,4 +155,7 @@ Die PowerShell-Skripte bleiben als Entwickler-Fallback verfügbar:
 Das Add-in nutzt `IDTExtensibility2`, `Microsoft.Office.Core.IRibbonExtensibility`,
 Ribbon Custom UI `2009/07` und OneNote XML `XMLSchema.xs2013`. COM-Objekte werden
 pro Aktion erzeugt und explizit freigegeben; das von `OnConnection` gelieferte
-Application-Objekt wird nicht dauerhaft gehalten.
+Application-Objekt wird nicht dauerhaft gehalten. Ribbon-Aktionen geben sofort
+an OneNote zurück. OneNote-COM-Aufrufe und WinForms-Dialoge laufen anschließend
+auf einem eigenen STA-Thread mit Windows-Message-Pump; Dialoge gehören dabei zum
+aktiven OneNote-Hauptfenster.

@@ -5,6 +5,8 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Xml.Linq;
 using Extensibility;
@@ -20,7 +22,9 @@ namespace Schnellbausteine.AddIn
     public sealed class AddIn : IDTExtensibility2, IRibbonExtensibility
     {
         private readonly SnippetRepository repository = new SnippetRepository(SnippetRepository.DefaultRoot);
+        private readonly StaDispatcher dispatcher = new StaDispatcher();
         private IRibbonUI ribbon;
+        private int operationActive;
 
         public void OnConnection(object application, ext_ConnectMode connectMode, object addInInstance, ref Array custom) { }
         public void OnAddInsUpdate(ref Array custom) { }
@@ -29,8 +33,16 @@ namespace Schnellbausteine.AddIn
 
         public void OnDisconnection(ext_DisconnectMode removeMode, ref Array custom)
         {
-            if (ribbon != null && Marshal.IsComObject(ribbon)) Marshal.FinalReleaseComObject(ribbon);
-            ribbon = null;
+            IRibbonUI disconnectedRibbon = Interlocked.Exchange(ref ribbon, null);
+            bool dispatcherStopped = dispatcher.Shutdown(TimeSpan.FromSeconds(5));
+            if (dispatcherStopped && disconnectedRibbon != null && Marshal.IsComObject(disconnectedRibbon))
+            {
+                Marshal.FinalReleaseComObject(disconnectedRibbon);
+            }
+            else if (!dispatcherStopped)
+            {
+                Log.Info("STA-UI-Thread reagierte beim Beenden nicht; Ribbon-RCW wird nicht vorzeitig freigegeben.");
+            }
         }
 
         public string GetCustomUI(string ribbonId)
@@ -49,6 +61,11 @@ namespace Schnellbausteine.AddIn
 
         public bool CanSaveSelection(IRibbonControl control)
         {
+            return true;
+        }
+
+        internal bool HasCurrentSelection()
+        {
             try
             {
                 using (var oneNote = new OneNoteClient())
@@ -65,44 +82,58 @@ namespace Schnellbausteine.AddIn
 
         public void SaveSelection(IRibbonControl control)
         {
+            var callbackBodyCompleted = new TaskCompletionSource<object>();
             try
             {
-                XDocument fragment;
-                using (var oneNote = new OneNoteClient())
-                {
-                    fragment = OneNoteXml.ExtractSelection(oneNote.ReadCurrentPage(), oneNote.ReadBinary);
-                }
-
-                using (var dialog = new NameDialog("Als Schnellbaustein speichern", string.Empty))
-                {
-                    while (dialog.ShowDialog() == DialogResult.OK)
-                    {
-                        if (dialog.SnippetName.Length == 0)
-                        {
-                            MessageBox.Show("Bitte einen Namen eingeben.", "Name erforderlich", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                            continue;
-                        }
-
-                        bool overwrite = false;
-                        if (repository.ContainsName(dialog.SnippetName, null))
-                        {
-                            DialogResult answer = MessageBox.Show(
-                                "Ein Schnellbaustein mit diesem Namen existiert bereits.\n\nJa: uberschreiben\nNein: anderen Namen eingeben",
-                                "Namenskonflikt", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
-                            if (answer == DialogResult.Cancel) return;
-                            if (answer == DialogResult.No) continue;
-                            overwrite = true;
-                        }
-
-                        repository.Save(dialog.SnippetName, fragment, overwrite);
-                        InvalidateMenu();
-                        return;
-                    }
-                }
+                DispatchUserAction(
+                    callbackBodyCompleted.Task,
+                    "Der Schnellbaustein konnte nicht gespeichert werden.",
+                    SaveSelectionCore);
             }
-            catch (Exception exception)
+            finally
             {
-                ShowError("Der Schnellbaustein konnte nicht gespeichert werden.", exception);
+                callbackBodyCompleted.SetResult(null);
+            }
+        }
+
+        private void SaveSelectionCore(IntPtr fallbackOwnerHandle)
+        {
+            XDocument fragment;
+            IntPtr ownerHandle;
+            using (var oneNote = new OneNoteClient())
+            {
+                fragment = OneNoteXml.ExtractSelection(oneNote.ReadCurrentPage(), oneNote.ReadBinary);
+                ownerHandle = oneNote.CurrentWindowHandle;
+            }
+
+            var owner = new WindowHandleOwner(
+                ownerHandle == IntPtr.Zero ? fallbackOwnerHandle : ownerHandle);
+            using (var dialog = new NameDialog("Als Schnellbaustein speichern", string.Empty))
+            {
+                while (dialog.ShowDialog(owner) == DialogResult.OK)
+                {
+                    if (dialog.SnippetName.Length == 0)
+                    {
+                        MessageBox.Show(owner, "Bitte einen Namen eingeben.", "Name erforderlich",
+                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        continue;
+                    }
+
+                    bool overwrite = false;
+                    if (repository.ContainsName(dialog.SnippetName, null))
+                    {
+                        DialogResult answer = MessageBox.Show(owner,
+                            "Ein Schnellbaustein mit diesem Namen existiert bereits.\n\nJa: überschreiben\nNein: anderen Namen eingeben",
+                            "Namenskonflikt", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
+                        if (answer == DialogResult.Cancel) return;
+                        if (answer == DialogResult.No) continue;
+                        overwrite = true;
+                    }
+
+                    repository.Save(dialog.SnippetName, fragment, overwrite);
+                    InvalidateMenu();
+                    return;
+                }
             }
         }
 
@@ -138,47 +169,131 @@ namespace Schnellbausteine.AddIn
 
         public void InsertSnippet(IRibbonControl control)
         {
+            var callbackBodyCompleted = new TaskCompletionSource<object>();
             try
             {
-                if (control == null || string.IsNullOrEmpty(control.Tag)) throw new InvalidOperationException("Der Schnellbaustein besitzt keine ID.");
-                XDocument fragment = repository.LoadFragment(control.Tag);
-                using (var oneNote = new OneNoteClient())
+                string snippetId;
+                try
                 {
-                    XDocument page = oneNote.ReadCurrentPage();
-                    OneNoteXml.Insert(page, fragment);
-                    oneNote.UpdateCurrentPage(page);
+                    snippetId = control == null ? null : control.Tag;
                 }
+                catch (Exception exception)
+                {
+                    DispatchUserAction(
+                        callbackBodyCompleted.Task,
+                        "Der Schnellbaustein konnte nicht eingefügt werden.",
+                        delegate
+                        {
+                            throw new InvalidOperationException(
+                                "Die ID des Schnellbausteins konnte nicht gelesen werden.", exception);
+                        });
+                    return;
+                }
+                DispatchUserAction(
+                    callbackBodyCompleted.Task,
+                    "Der Schnellbaustein konnte nicht eingefügt werden.",
+                    delegate
+                    {
+                        if (string.IsNullOrEmpty(snippetId))
+                        {
+                            throw new InvalidOperationException("Der Schnellbaustein besitzt keine ID.");
+                        }
+                        XDocument fragment = repository.LoadFragment(snippetId);
+                        using (var oneNote = new OneNoteClient())
+                        {
+                            XDocument page = oneNote.ReadCurrentPage();
+                            OneNoteXml.Insert(page, fragment);
+                            oneNote.UpdateCurrentPage(page);
+                        }
+                    });
             }
-            catch (Exception exception)
+            finally
             {
-                ShowError("Der Schnellbaustein konnte nicht eingefugt werden.", exception);
+                callbackBodyCompleted.SetResult(null);
             }
         }
 
         public void ManageSnippets(IRibbonControl control)
         {
+            var callbackBodyCompleted = new TaskCompletionSource<object>();
             try
             {
-                using (var dialog = new ManageDialog(repository, InvalidateMenu))
-                {
-                    dialog.ShowDialog();
-                }
+                DispatchUserAction(
+                    callbackBodyCompleted.Task,
+                    "Die Verwaltung konnte nicht geöffnet werden.",
+                    delegate(IntPtr ownerHandle)
+                    {
+                        using (var dialog = new ManageDialog(repository, InvalidateMenu))
+                        {
+                            dialog.ShowDialog(new WindowHandleOwner(ownerHandle));
+                        }
+                    });
+            }
+            finally
+            {
+                callbackBodyCompleted.SetResult(null);
+            }
+        }
+
+        private void DispatchUserAction(
+            Task callbackBodyCompleted, string errorMessage, Action<IntPtr> action)
+        {
+            if (Interlocked.CompareExchange(ref operationActive, 1, 0) != 0)
+            {
+                Log.Info("Ein Schnellbausteine-Befehl wird bereits ausgeführt.");
+                return;
+            }
+
+            IntPtr ownerHandle = NativeMethods.GetForegroundWindow();
+            try
+            {
+                dispatcher.PostAfterCallback(
+                    callbackBodyCompleted,
+                    delegate
+                    {
+                        try
+                        {
+                            action(ownerHandle);
+                        }
+                        catch (Exception exception)
+                        {
+                            ShowError(errorMessage, exception, ownerHandle);
+                        }
+                        finally
+                        {
+                            Interlocked.Exchange(ref operationActive, 0);
+                        }
+                    },
+                    delegate(Exception exception)
+                    {
+                        Interlocked.Exchange(ref operationActive, 0);
+                        Log.Error(errorMessage, exception);
+                    });
             }
             catch (Exception exception)
             {
-                ShowError("Die Verwaltung konnte nicht geoffnet werden.", exception);
+                Interlocked.Exchange(ref operationActive, 0);
+                Log.Error(errorMessage, exception);
             }
         }
 
         private void InvalidateMenu()
         {
-            if (ribbon != null) ribbon.InvalidateControl("sqInsertMenu");
+            IRibbonUI activeRibbon = ribbon;
+            if (activeRibbon != null) activeRibbon.InvalidateControl("sqInsertMenu");
         }
 
-        private static void ShowError(string message, Exception exception)
+        private static void ShowError(string message, Exception exception, IntPtr ownerHandle)
         {
             Log.Error(message, exception);
-            MessageBox.Show(message + "\n\n" + exception.Message, "Schnellbausteine", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(new WindowHandleOwner(ownerHandle), message + "\n\n" + exception.Message,
+                "Schnellbausteine", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+
+        private static class NativeMethods
+        {
+            [DllImport("user32.dll")]
+            internal static extern IntPtr GetForegroundWindow();
         }
     }
 }

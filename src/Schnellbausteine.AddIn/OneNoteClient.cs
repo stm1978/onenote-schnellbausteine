@@ -11,6 +11,7 @@ namespace Schnellbausteine.AddIn
         private const XMLSchema Schema2013 = (XMLSchema)2;
         private IApplication application;
         private string currentPageId;
+        private IntPtr currentWindowHandle;
 
         public OneNoteClient()
         {
@@ -29,6 +30,11 @@ namespace Schnellbausteine.AddIn
             application.GetPageContent(
                 currentPageId, out xml, PageInfo.piBinaryDataSelection, Schema2013);
             return XDocument.Parse(xml, LoadOptions.PreserveWhitespace);
+        }
+
+        public IntPtr CurrentWindowHandle
+        {
+            get { return currentWindowHandle; }
         }
 
         public string ReadBinary(string callbackId)
@@ -57,6 +63,7 @@ namespace Schnellbausteine.AddIn
                 {
                     throw new InvalidOperationException("OneNote hat keine aktive Seite.");
                 }
+                currentWindowHandle = new IntPtr(unchecked((long)window.WindowHandle));
                 return window.CurrentPageId;
             }
             finally
