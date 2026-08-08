@@ -13,8 +13,12 @@ $csc = Join-Path $framework "csc.exe"
 
 function Find-GacAssembly([string]$name, [string[]]$versions) {
     $candidate = $null
+    $gacRoots = @(
+        (Join-Path $env:WINDIR "assembly\GAC_MSIL\$name"),
+        (Join-Path $env:WINDIR "Microsoft.NET\assembly\GAC_MSIL\$name")
+    )
     foreach ($version in $versions) {
-        $candidate = Get-ChildItem (Join-Path $env:WINDIR "assembly\GAC_MSIL\$name") -Recurse -Filter "$name.dll" -ErrorAction SilentlyContinue |
+        $candidate = Get-ChildItem $gacRoots -Recurse -Filter "$name.dll" -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -match "\\$version\.0\.0\.0__" } |
             Select-Object -First 1
         if ($candidate) { break }
