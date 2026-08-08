@@ -8,6 +8,7 @@ using System.Runtime.Remoting.Proxies;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Forms;
 using System.Xml.Linq;
 
 namespace Schnellbausteine.Tests
@@ -55,6 +56,10 @@ namespace Schnellbausteine.Tests
             string menuRepositoryRoot = Path.Combine(
                 Path.GetTempPath(),
                 "Schnellbausteine.AddInSmoke",
+                Guid.NewGuid().ToString("N"));
+            string manageRepositoryRoot = Path.Combine(
+                Path.GetTempPath(),
+                "Schnellbausteine.ManageDialogSmoke",
                 Guid.NewGuid().ToString("N"));
             Environment.SetEnvironmentVariable("SCHNELLBAUSTEINE_LOG_PATH", diagnosticLog);
             Type logType = null;
@@ -171,6 +176,10 @@ namespace Schnellbausteine.Tests
                     menuAddIn,
                     insertSnippetActionField,
                     XDocument.Parse(menuContentXml));
+                bool manageDialogRefreshWorks = VerifyManageDialogRefresh(
+                    manageDialogType,
+                    repositoryType,
+                    manageRepositoryRoot);
                 string ribbonXml = (string)type.GetMethod("GetCustomUI").Invoke(
                     addIn, new object[] { "Microsoft.OneNote" });
                 XNamespace ribbonNamespace =
@@ -320,6 +329,7 @@ namespace Schnellbausteine.Tests
                     !saveCallbackHarnessWorks ||
                     !manageCallbackHarnessWorks ||
                     !itemCallbackHarnessWorks ||
+                    !manageDialogRefreshWorks ||
                     dispatchMethod == null ||
                     !CallsMember(saveSelectionMethod, dispatchMethod) ||
                     forbiddenCallbackConstructors.Any(
@@ -416,7 +426,111 @@ namespace Schnellbausteine.Tests
                 {
                     Directory.Delete(menuRepositoryRoot, true);
                 }
+                if (Directory.Exists(manageRepositoryRoot))
+                {
+                    Directory.Delete(manageRepositoryRoot, true);
+                }
             }
+        }
+
+        private static bool VerifyManageDialogRefresh(
+            Type manageDialogType,
+            Type repositoryType,
+            string repositoryRoot)
+        {
+            Directory.CreateDirectory(repositoryRoot);
+            object repository = Activator.CreateInstance(
+                repositoryType,
+                new object[] { repositoryRoot });
+            MethodInfo save = repositoryType.GetMethod("Save");
+            MethodInfo rename = repositoryType.GetMethod("Rename");
+            MethodInfo delete = repositoryType.GetMethod("Delete");
+            XDocument fragment = XDocument.Parse(
+                "<sq:Snippet xmlns:sq=\"urn:schnellbausteine:v1\" " +
+                "xmlns:one=\"http://schemas.microsoft.com/office/onenote/2013/onenote\" " +
+                "version=\"1\"><sq:TagDefs/><sq:QuickStyleDefs/><sq:Content>" +
+                "<one:OE><one:T><![CDATA[Test]]></one:T></one:OE>" +
+                "</sq:Content></sq:Snippet>");
+            object alpha = save.Invoke(
+                repository,
+                new object[] { "Alpha", fragment, false });
+            object beta = save.Invoke(
+                repository,
+                new object[] { "Beta", fragment, false });
+            PropertyInfo id = alpha.GetType().GetProperty("Id");
+            string alphaId = (string)id.GetValue(alpha, null);
+            string betaId = (string)id.GetValue(beta, null);
+            Form dialog = null;
+            try
+            {
+                dialog = (Form)Activator.CreateInstance(
+                    manageDialogType,
+                    new object[] { repository, new Action(delegate { }) });
+                ListBox list = (ListBox)manageDialogType.GetField(
+                    "list",
+                    BindingFlags.Instance | BindingFlags.NonPublic).GetValue(dialog);
+                MethodInfo loadItems = manageDialogType.GetMethod(
+                    "LoadItems",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                if (ListText(list) != "Alpha,Beta") return false;
+
+                list.SelectedItem = list.Items.Cast<object>().Single(item =>
+                    (string)id.GetValue(item, null) == alphaId);
+                delete.Invoke(repository, new object[] { betaId });
+                loadItems.Invoke(dialog, null);
+                if (ListText(list) != "Alpha" ||
+                    (string)id.GetValue(list.SelectedItem, null) != alphaId)
+                {
+                    return false;
+                }
+
+                rename.Invoke(repository, new object[] { alphaId, "Aaron" });
+                loadItems.Invoke(dialog, null);
+                if (ListText(list) != "Aaron" ||
+                    (string)id.GetValue(list.SelectedItem, null) != alphaId)
+                {
+                    return false;
+                }
+
+                object zulu = save.Invoke(
+                    repository,
+                    new object[] { "Zulu", fragment, false });
+                string zuluId = (string)id.GetValue(zulu, null);
+                loadItems.Invoke(dialog, null);
+                if (ListText(list) != "Aaron,Zulu" ||
+                    (string)id.GetValue(list.SelectedItem, null) != alphaId)
+                {
+                    return false;
+                }
+
+                delete.Invoke(repository, new object[] { alphaId });
+                loadItems.Invoke(dialog, null);
+                if (ListText(list) != "Zulu" ||
+                    list.SelectedItem == null ||
+                    (string)id.GetValue(list.SelectedItem, null) != zuluId)
+                {
+                    return false;
+                }
+
+                delete.Invoke(repository, new object[] { zuluId });
+                loadItems.Invoke(dialog, null);
+                if (list.Items.Count != 0 || list.SelectedItem != null) return false;
+
+                save.Invoke(repository, new object[] { "Gamma", fragment, false });
+                loadItems.Invoke(dialog, null);
+                return ListText(list) == "Gamma";
+            }
+            finally
+            {
+                if (dialog != null) dialog.Dispose();
+            }
+        }
+
+        private static string ListText(ListBox list)
+        {
+            return string.Join(
+                ",",
+                list.Items.Cast<object>().Select(item => list.GetItemText(item)));
         }
 
         private static bool CallsMethod(MethodInfo caller, MethodInfo called)
