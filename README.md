@@ -109,10 +109,13 @@ diese optionale Angabe bleiben lesbar und verändern die Zielbreite nicht.
 - Keine Cloud-Synchronisierung, Kategorien, KI, Vorlagen oder Platzhalter.
 - Eingebettete Dateien sind nicht Ziel des MVP. Formatierter Text,
   Überschriften, Listen, OneNote-Tags/Checkboxen, Bilder, ganze Tabellen,
-  vollständige Tabellenzeilen/-spalten, rechteckige Zellbereiche und jeweils
-  genau eine vollständige Freihandzeichnung werden unterstützt.
+  vollständige Tabellenzeilen/-spalten, rechteckige Zellbereiche und vollständige
+  Freihandzeichnungen werden unterstützt. Eindeutig getrennte Auswahlwurzeln aus
+  Text, Bild oder genau einer Tabelle können gemeinsam mit einer oder mehreren
+  vollständigen Freihandzeichnungen dokumentgeordnet gespeichert werden.
 - Mehrere Tabellen, nicht rechteckige Zellbereiche, Tabellen mit extern
-  markierten Inhalten sowie gemischte oder mehrere Freihandzeichnungen werden
+  markierten Inhalten, überlappende Auswahlwurzeln sowie partielle oder durch
+  vollständig markierte Seitenvorfahren mehrdeutige Freihandauswahlen werden
   sicher abgelehnt.
 - Eine Lasso-Auswahl wird nicht offline auf einzelne Striche zugeschnitten.
   Gespeichert wird ausschließlich ein vollständiger `InkDrawing`-Blob, den

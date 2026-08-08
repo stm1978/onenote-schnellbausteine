@@ -29,7 +29,12 @@ namespace Schnellbausteine.Tests
             InkCallbackIsMaterializedAndMetadataRemoved,
             InvalidInkBinaryDataIsRejected,
             TopLevelInkRoundTripsAtCellAnchor,
-            MixedAndMultipleInkSelectionsAreRejected,
+            MixedInkAndTextPreserveOrderAndRoundTrip,
+            MixedInkAndImageMaterializesBinary,
+            MixedInkAndTablePreservesCompactStructure,
+            MixedTopLevelAndNestedInkRootsAreOrdered,
+            MultipleInkDrawingsPreserveOrder,
+            AmbiguousMixedInkSelectionsAreRejected,
             SelectionStoresOutlineMinimumWidth,
             SelectionFallsBackToTableAndImageWidths,
             EmptyCursorIsNotASelection,
@@ -426,22 +431,200 @@ namespace Schnellbausteine.Tests
             AssertSinglePostInsertCaret(target);
         }
 
-        private static void MixedAndMultipleInkSelectionsAreRejected()
+        private static void MixedInkAndTextPreserveOrderAndRoundTrip()
         {
-            XDocument mixed = Page(
+            XDocument source = Page(
+                "<one:Outline selected=\"partial\"><one:OEChildren><one:OE selected=\"partial\">" +
+                "<one:T><![CDATA[unselected-before]]></one:T>" +
+                "<one:T selected=\"all\"><![CDATA[first]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>" +
+                "<one:InkDrawing selected=\"all\" inkOrigin=\"1,2\"><one:Data>AQID</one:Data></one:InkDrawing>" +
+                "<one:Outline selected=\"partial\"><one:OEChildren><one:OE selected=\"partial\">" +
+                "<one:T selected=\"all\"><![CDATA[last]]></one:T>" +
+                "<one:T><![CDATA[unselected-after]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+            source.Root.SetAttributeValue("selected", "partial");
+
+            XDocument snippet = OneNoteXml.ExtractSelection(source, null);
+            XElement[] roots = snippet.Root.Element(OneNoteXml.Snippet + "Content")
+                .Elements().ToArray();
+
+            Equal(3, roots.Length);
+            Equal("first", roots[0].Descendants(OneNoteXml.One + "T").Single().Value);
+            Equal("AQID", roots[1].Descendants(OneNoteXml.One + "Data").Single().Value);
+            Equal("last", roots[2].Descendants(OneNoteXml.One + "T").Single().Value);
+            Assert(!snippet.ToString().Contains("unselected-before"), "Unselektierter Vorgänger wurde erfasst.");
+            Assert(!snippet.ToString().Contains("unselected-after"), "Unselektierter Nachfolger wurde erfasst.");
+
+            XDocument target = Page(
                 "<one:Outline><one:OEChildren><one:OE>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+            OneNoteInsertionResult result = OneNoteXml.InsertAtSelection(target, snippet);
+            Equal("BlockRange", result.Strategy);
+            Equal("first,last", string.Join(",", target.Descendants(OneNoteXml.One + "T")
+                .Where(text => text.Value.Length > 0).Select(text => text.Value)));
+            Equal(1, target.Descendants(OneNoteXml.One + "InkDrawing").Count());
+            AssertSinglePostInsertCaret(target);
+        }
+
+        private static void MixedInkAndImageMaterializesBinary()
+        {
+            XDocument source = Page(
+                "<one:Outline><one:OEChildren><one:OE selected=\"partial\">" +
+                "<one:T><![CDATA[neighbor]]></one:T>" +
+                "<one:Image selected=\"all\" callbackID=\"mixed-image\" format=\"png\"/>" +
+                "</one:OE></one:OEChildren></one:Outline>" +
+                "<one:InkDrawing selected=\"all\" callbackID=\"mixed-ink\"/>");
+            var callbacks = new List<string>();
+
+            XDocument snippet = OneNoteXml.ExtractSelection(source, callback =>
+            {
+                callbacks.Add(callback);
+                return callback == "mixed-image" ? "IMAGE-DATA" : "INK-DATA";
+            });
+
+            Equal("mixed-image,mixed-ink", string.Join(",", callbacks));
+            Equal("IMAGE-DATA", snippet.Descendants(OneNoteXml.One + "Image")
+                .Single().Element(OneNoteXml.One + "Data").Value);
+            Equal("INK-DATA", snippet.Descendants(OneNoteXml.One + "InkDrawing")
+                .Single().Element(OneNoteXml.One + "Data").Value);
+            Assert(!snippet.ToString().Contains("neighbor"), "Unselektierter Bildnachbar wurde erfasst.");
+            Assert(!snippet.Descendants().Attributes("callbackID").Any(),
+                "CallbackID wurde im gemischten Fragment persistiert.");
+        }
+
+        private static void MixedInkAndTablePreservesCompactStructure()
+        {
+            XDocument source = TableSelectionPage(
+                " selected=\"partial\"",
+                " selected=\"partial\"",
+                " selected=\"all\"",
+                " selected=\"all\"");
+            source.Root.Add(
+                new XElement(OneNoteXml.One + "InkDrawing",
+                    new XAttribute("selected", "all"),
+                    new XElement(OneNoteXml.One + "Data", "AQID")));
+
+            XDocument snippet = OneNoteXml.ExtractSelection(source, null);
+            XElement table = snippet.Descendants(OneNoteXml.One + "Table").Single();
+
+            Equal(2, table.Elements(OneNoteXml.One + "Row").Count());
+            Equal(2, table.Element(OneNoteXml.One + "Columns")
+                .Elements(OneNoteXml.One + "Column").Count());
+            Equal("B1,A2,C1,C2", string.Join(",",
+                table.Descendants(OneNoteXml.One + "T").Select(text => text.Value)));
+            Equal(1, snippet.Descendants(OneNoteXml.One + "InkDrawing").Count());
+            XElement[] roots = snippet.Root.Element(OneNoteXml.Snippet + "Content")
+                .Elements().ToArray();
+            Equal("Table", roots[0].Elements().Single().Name.LocalName);
+            Equal("InkDrawing", roots[1].Elements().Single().Name.LocalName);
+            XDocument target = Page(
+                "<one:Outline><one:OEChildren><one:OE>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+            OneNoteXml.InsertAtSelection(target, snippet);
+            Equal(1, target.Descendants(OneNoteXml.One + "Table").Count());
+            Equal(1, target.Descendants(OneNoteXml.One + "InkDrawing").Count());
+            AssertSinglePostInsertCaret(target);
+        }
+
+        private static void MixedTopLevelAndNestedInkRootsAreOrdered()
+        {
+            XDocument source = Page(
+                "<one:InkDrawing selected=\"all\"><one:Data>AQID</one:Data></one:InkDrawing>" +
+                "<one:Outline><one:OEChildren><one:OE selected=\"partial\">" +
+                "<one:Image selected=\"all\" format=\"png\"><one:Data>IMAGE</one:Data></one:Image>" +
+                "</one:OE></one:OEChildren></one:Outline>" +
+                "<one:Outline><one:OEChildren><one:OE selected=\"partial\">" +
+                "<one:InkDrawing selected=\"all\"><one:Data>BAUG</one:Data></one:InkDrawing>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+
+            XDocument snippet = OneNoteXml.ExtractSelection(source, null);
+            XElement[] roots = snippet.Root.Element(OneNoteXml.Snippet + "Content")
+                .Elements().ToArray();
+
+            Equal(3, roots.Length);
+            Equal("AQID", roots[0].Descendants(OneNoteXml.One + "InkDrawing")
+                .Single().Element(OneNoteXml.One + "Data").Value);
+            Equal("IMAGE", roots[1].Descendants(OneNoteXml.One + "Image")
+                .Single().Element(OneNoteXml.One + "Data").Value);
+            Equal("BAUG", roots[2].Descendants(OneNoteXml.One + "InkDrawing")
+                .Single().Element(OneNoteXml.One + "Data").Value);
+        }
+
+        private static void MultipleInkDrawingsPreserveOrder()
+        {
+            XDocument source = Page(
+                "<one:InkDrawing selected=\"all\"><one:Data>AQID</one:Data></one:InkDrawing>" +
+                "<one:InkDrawing selected=\"all\"><one:Data>BAUG</one:Data></one:InkDrawing>");
+            XDocument snippet = OneNoteXml.ExtractSelection(source, null);
+
+            Equal("AQID,BAUG", string.Join(",", snippet
+                .Descendants(OneNoteXml.One + "InkDrawing")
+                .Select(ink => ink.Element(OneNoteXml.One + "Data").Value)));
+            XDocument target = Page(
+                "<one:Outline><one:OEChildren><one:OE>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+            OneNoteXml.InsertAtSelection(target, snippet);
+            Equal("AQID,BAUG", string.Join(",", target
+                .Descendants(OneNoteXml.One + "InkDrawing")
+                .Select(ink => ink.Element(OneNoteXml.One + "Data").Value)));
+            AssertSinglePostInsertCaret(target);
+        }
+
+        private static void AmbiguousMixedInkSelectionsAreRejected()
+        {
+            XDocument overlapping = Page(
+                "<one:Outline><one:OEChildren><one:OE selected=\"partial\">" +
                 "<one:InkDrawing selected=\"all\"><one:Data>AQID</one:Data></one:InkDrawing>" +
                 "<one:T selected=\"all\"><![CDATA[text]]></one:T>" +
                 "</one:OE></one:OEChildren></one:Outline>");
-            Throws<InvalidOperationException>(() => OneNoteXml.ExtractSelection(mixed, null));
+            Throws<InvalidOperationException>(() => OneNoteXml.ExtractSelection(overlapping, null));
 
-            XDocument multiple = Page(
-                "<one:InkDrawing selected=\"all\"><one:Data>AQID</one:Data></one:InkDrawing>" +
-                "<one:InkDrawing selected=\"all\"><one:Data>BAUG</one:Data></one:InkDrawing>");
-            Throws<InvalidOperationException>(() => OneNoteXml.ExtractSelection(multiple, null));
+            XDocument wholePage = Page(
+                "<one:Outline><one:OEChildren><one:OE><one:T selected=\"all\"><![CDATA[text]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>" +
+                "<one:InkDrawing selected=\"all\"><one:Data>AQID</one:Data></one:InkDrawing>");
+            wholePage.Root.SetAttributeValue("selected", "all");
+            Throws<InvalidOperationException>(() => OneNoteXml.ExtractSelection(wholePage, null));
+
+            XDocument multipleTables = Page(
+                "<one:Outline><one:OEChildren><one:OE><one:Table selected=\"all\">" +
+                TableColumns() + TableRows(string.Empty) + "</one:Table></one:OE></one:OEChildren></one:Outline>" +
+                "<one:Outline><one:OEChildren><one:OE><one:Table selected=\"all\">" +
+                TableColumns() + TableRows(string.Empty) + "</one:Table></one:OE></one:OEChildren></one:Outline>" +
+                "<one:InkDrawing selected=\"all\"><one:Data>AQID</one:Data></one:InkDrawing>");
+            Throws<InvalidOperationException>(() =>
+                OneNoteXml.ExtractSelection(multipleTables, null));
+
+            XDocument hiddenMultipleTables = Page(
+                "<one:Outline><one:OEChildren><one:OE selected=\"all\">" +
+                "<one:Table>" + TableColumns() + TableRows(string.Empty) + "</one:Table>" +
+                "<one:Table>" + TableColumns() + TableRows(string.Empty) + "</one:Table>" +
+                "</one:OE></one:OEChildren></one:Outline>" +
+                "<one:InkDrawing selected=\"all\"><one:Data>AQID</one:Data></one:InkDrawing>");
+            Throws<InvalidOperationException>(() =>
+                OneNoteXml.ExtractSelection(hiddenMultipleTables, null));
+
+            XDocument emptyPartialRoot = Page(
+                "<one:Outline><one:OEChildren><one:OE selected=\"partial\">" +
+                "<one:T><![CDATA[not-selected]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>" +
+                "<one:InkDrawing selected=\"all\"><one:Data>AQID</one:Data></one:InkDrawing>");
+            Throws<InvalidOperationException>(() =>
+                OneNoteXml.ExtractSelection(emptyPartialRoot, null));
 
             XDocument ink = OneNoteXml.ExtractSelection(
                 Page("<one:InkDrawing selected=\"all\"><one:Data>AQID</one:Data></one:InkDrawing>"),
+                null);
+            XDocument mixed = OneNoteXml.ExtractSelection(
+                Page(
+                    "<one:Outline><one:OEChildren><one:OE>" +
+                    "<one:T selected=\"all\"><![CDATA[text]]></one:T>" +
+                    "</one:OE></one:OEChildren></one:Outline>" +
+                    "<one:InkDrawing selected=\"all\"><one:Data>AQID</one:Data></one:InkDrawing>"),
                 null);
             XDocument specialAnchor = Page(
                 "<one:Outline><one:OEChildren><one:OE>" +
@@ -450,6 +633,9 @@ namespace Schnellbausteine.Tests
             XDocument before = new XDocument(specialAnchor);
             Throws<InvalidOperationException>(() =>
                 OneNoteXml.InsertAtSelection(specialAnchor, ink));
+            XmlEqual(before, specialAnchor);
+            Throws<InvalidOperationException>(() =>
+                OneNoteXml.InsertAtSelection(specialAnchor, mixed));
             XmlEqual(before, specialAnchor);
         }
 
