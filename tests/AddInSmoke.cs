@@ -12,6 +12,15 @@ namespace Schnellbausteine.Tests
 {
     internal static class AddInSmoke
     {
+        private sealed class MtaInvocation
+        {
+            public bool Completed;
+            public TimeSpan Duration;
+            public Exception Exception;
+            public Thread Thread;
+            public int ThreadId;
+        }
+
         private static int Main(string[] args)
         {
             if (args.Length < 1 || args.Length > 2)
@@ -24,6 +33,7 @@ namespace Schnellbausteine.Tests
             string diagnosticLog =
                 "Schnellbausteine-Smoke-" + Guid.NewGuid().ToString("N") + ".log";
             Environment.SetEnvironmentVariable("SCHNELLBAUSTEINE_LOG_PATH", diagnosticLog);
+            Type logType = null;
             try
             {
                 Assembly assembly = Assembly.LoadFrom(args[0]);
@@ -40,6 +50,7 @@ namespace Schnellbausteine.Tests
                     "saveSelectionAction", BindingFlags.Instance | BindingFlags.NonPublic);
                 Type dispatcherType = assembly.GetType(
                     "Schnellbausteine.AddIn.StaDispatcher", true);
+                logType = assembly.GetType("Schnellbausteine.AddIn.Log", true);
                 MethodInfo dispatchMethod = type.GetMethod(
                     "DispatchUserAction", BindingFlags.Instance | BindingFlags.NonPublic);
                 MethodInfo selectionMethod = type.GetMethod(
@@ -62,6 +73,7 @@ namespace Schnellbausteine.Tests
                 object addIn = Activator.CreateInstance(type);
                 bool dispatcherWorks = VerifyDispatcher(
                     Activator.CreateInstance(dispatcherType), dispatcherType);
+                bool timeoutGuardWorks = VerifyCallbackTimeoutGuard();
                 bool callbackHarnessWorks = VerifySaveSelectionCallback(
                     addIn, saveSelectionActionField);
                 bool visibilityCallback = (bool)type.GetMethod("CanSaveSelection").Invoke(
@@ -104,6 +116,7 @@ namespace Schnellbausteine.Tests
                     dispatcherType.GetMethod("PostAfterCallback") == null ||
                     dispatcherType.GetMethod("Shutdown") == null ||
                     !dispatcherWorks ||
+                    !timeoutGuardWorks ||
                     !callbackHarnessWorks ||
                     dispatchMethod == null ||
                     !CallsMember(saveSelectionMethod, dispatchMethod) ||
@@ -123,7 +136,9 @@ namespace Schnellbausteine.Tests
                     return 1;
                 }
 
-                if (!VerifyDiagnostics(diagnosticLog))
+                bool logFlushed = (bool)logType.GetMethod("Flush").Invoke(
+                    null, new object[] { TimeSpan.FromSeconds(5) });
+                if (!logFlushed || !VerifyDiagnostics(diagnosticLog))
                 {
                     Console.Error.WriteLine("Callback diagnostic logging is incomplete.");
                     return 1;
@@ -156,6 +171,11 @@ namespace Schnellbausteine.Tests
             }
             finally
             {
+                if (logType != null)
+                {
+                    logType.GetMethod("Flush").Invoke(
+                        null, new object[] { TimeSpan.FromSeconds(5) });
+                }
                 Environment.SetEnvironmentVariable("SCHNELLBAUSTEINE_LOG_PATH", null);
                 if (File.Exists(diagnosticLog)) File.Delete(diagnosticLog);
             }
@@ -238,8 +258,6 @@ namespace Schnellbausteine.Tests
             bool result = false;
             bool shutdown = false;
             bool callbackFinished = false;
-            var callbackDuration = new Stopwatch();
-            Exception callbackException = null;
             try
             {
                 saveSelectionActionField.SetValue(addIn, new Action<IntPtr>(delegate
@@ -249,34 +267,25 @@ namespace Schnellbausteine.Tests
                     dispatchedThreadId = Thread.CurrentThread.ManagedThreadId;
                     actionCompleted.Set();
                 }));
-                var callbackThread = new Thread(new ThreadStart(delegate
+                MtaInvocation invocation = InvokeOnMta(delegate
                 {
-                    callbackThreadId = Thread.CurrentThread.ManagedThreadId;
                     try
                     {
-                        callbackDuration.Start();
                         addIn.GetType().GetMethod("SaveSelection").Invoke(
                             addIn, new object[] { null });
                     }
-                    catch (Exception exception)
-                    {
-                        callbackException = exception;
-                    }
                     finally
                     {
-                        callbackDuration.Stop();
                         Volatile.Write(ref callbackReturned, true);
                     }
-                }));
-                callbackThread.IsBackground = true;
-                callbackThread.SetApartmentState(ApartmentState.MTA);
-                callbackThread.Start();
-                if (!callbackThread.Join(TimeSpan.FromSeconds(2))) return false;
+                }, TimeSpan.FromSeconds(2));
+                callbackThreadId = invocation.ThreadId;
+                if (!invocation.Completed) return false;
                 callbackFinished = true;
                 result = actionCompleted.WaitOne(TimeSpan.FromSeconds(5)) &&
-                    callbackException == null &&
+                    invocation.Exception == null &&
                     !actionStartedBeforeReturn &&
-                    callbackDuration.Elapsed < TimeSpan.FromSeconds(2) &&
+                    invocation.Duration < TimeSpan.FromSeconds(2) &&
                     apartment == ApartmentState.STA &&
                     dispatchedThreadId != callbackThreadId;
             }
@@ -289,6 +298,19 @@ namespace Schnellbausteine.Tests
                 shutdown = ShutdownDispatcher(dispatcher, dispatcher.GetType());
             }
             return result && shutdown;
+        }
+
+        private static bool VerifyCallbackTimeoutGuard()
+        {
+            var release = new ManualResetEvent(false);
+            MtaInvocation invocation = InvokeOnMta(delegate
+            {
+                release.WaitOne();
+            }, TimeSpan.FromMilliseconds(150));
+            release.Set();
+            bool cleanedUp = invocation.Thread.Join(TimeSpan.FromSeconds(2));
+            release.Dispose();
+            return !invocation.Completed && cleanedUp;
         }
 
         private static bool VerifyDiagnostics(string path)
@@ -324,6 +346,36 @@ namespace Schnellbausteine.Tests
         {
             return (bool)dispatcherType.GetMethod("Shutdown").Invoke(
                 dispatcher, new object[] { TimeSpan.FromSeconds(5) });
+        }
+
+        private static MtaInvocation InvokeOnMta(Action callback, TimeSpan timeout)
+        {
+            var invocation = new MtaInvocation();
+            var stopwatch = new Stopwatch();
+            var thread = new Thread(new ThreadStart(delegate
+            {
+                invocation.ThreadId = Thread.CurrentThread.ManagedThreadId;
+                try
+                {
+                    stopwatch.Start();
+                    callback();
+                }
+                catch (Exception exception)
+                {
+                    invocation.Exception = exception;
+                }
+                finally
+                {
+                    stopwatch.Stop();
+                }
+            }));
+            invocation.Thread = thread;
+            thread.IsBackground = true;
+            thread.SetApartmentState(ApartmentState.MTA);
+            thread.Start();
+            invocation.Completed = thread.Join(timeout);
+            invocation.Duration = stopwatch.Elapsed;
+            return invocation;
         }
     }
 }

@@ -68,6 +68,7 @@ namespace Schnellbausteine.AddIn
                 Log.Info("STA-UI-Thread reagierte beim Beenden nicht; Ribbon-RCW wird nicht vorzeitig freigegeben.");
             }
             Log.Trace("addin.disconnection", "exit");
+            Log.Flush(TimeSpan.FromMilliseconds(500));
         }
 
         public string GetCustomUI(string ribbonId)
