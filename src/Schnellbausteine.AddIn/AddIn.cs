@@ -236,12 +236,11 @@ namespace Schnellbausteine.AddIn
                         OneNoteXml.InsertAtSelection(anchoredPage, fragment);
                     Log.Diagnostic("onenote.insert.anchor", insertion.ToDiagnosticString());
                     Log.Trace("onenote.xml.insert", "after");
-                    oneNote.UpdateCurrentPage(anchoredPage);
                     try
                     {
-                        oneNote.NavigateToCurrentPage();
+                        oneNote.UpdateCurrentPageAndRestoreFocus(anchoredPage);
                     }
-                    catch (COMException exception)
+                    catch (OneNoteFocusException exception)
                     {
                         const string message =
                             "Der Schnellbaustein wurde eingefügt, aber OneNote konnte nicht erneut fokussiert werden.";

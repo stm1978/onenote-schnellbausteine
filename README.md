@@ -171,7 +171,12 @@ aktiven OneNote-Hauptfenster. Beim Einfügen wird die mit
 verankert und nach der Auswahl genau dieses unveränderte XML-Abbild aktualisiert.
 Der dabei erfasste `lastModifiedTime`-Wert verhindert, dass zwischenzeitliche
 Änderungen aus einem anderen Fenster oder durch Synchronisierung überschrieben
-werden; in diesem Fall bricht OneNote das Update sichtbar ab.
+werden; in diesem Fall bricht OneNote das Update sichtbar ab. Nach einem
+erfolgreichen Update liest das Add-in die Selection-Metadaten erneut, ermittelt
+die von OneNote vergebene `objectID` des leeren Cursorankers und ruft
+`NavigateTo(pageId, objectId)` auf. Dadurch erhält OneNote ein konkretes
+Editorziel statt nur einer Seitennavigation. Scheitert dieser Fokus-Schritt,
+bleibt der bereits eingefügte Inhalt erhalten und ein Hinweis wird angezeigt.
 Damit folgt der Einfügepfad wie OneMores öffentlich beschriebenes
 `SelectionRange`-/`PageEditor.InsertOrReplace`-Muster einer expliziten
 Selection-Range statt einer globalen Outline-Suche, ohne OneMore-Code zu

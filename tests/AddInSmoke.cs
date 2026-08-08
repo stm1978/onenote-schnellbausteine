@@ -40,9 +40,15 @@ namespace Schnellbausteine.Tests
                 Type type = assembly.GetType("Schnellbausteine.AddIn.AddIn", true);
                 Type clientType = assembly.GetType(
                     "Schnellbausteine.AddIn.OneNoteClient", true);
+                Type applicationAdapterType = assembly.GetType(
+                    "Schnellbausteine.AddIn.OneNoteApplicationAdapter", true);
+                Type applicationAdapterInterfaceType = assembly.GetType(
+                    "Schnellbausteine.AddIn.IOneNoteApplicationAdapter", true);
                 Type nameDialogType = assembly.GetType(
                     "Schnellbausteine.AddIn.NameDialog", true);
                 FieldInfo applicationField = clientType.GetField(
+                    "application", BindingFlags.Instance | BindingFlags.NonPublic);
+                FieldInfo piaApplicationField = applicationAdapterType.GetField(
                     "application", BindingFlags.Instance | BindingFlags.NonPublic);
                 FieldInfo dispatcherField = type.GetField(
                     "dispatcher", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -112,7 +118,9 @@ namespace Schnellbausteine.Tests
                     (string)saveButton.Attribute("insertBeforeMso") != "Cut" ||
                     saveButton.Attribute("getVisible") != null ||
                     applicationField == null ||
-                    applicationField.FieldType.FullName !=
+                    applicationField.FieldType != applicationAdapterInterfaceType ||
+                    piaApplicationField == null ||
+                    piaApplicationField.FieldType.FullName !=
                         "Microsoft.Office.Interop.OneNote.IApplication" ||
                     dispatcherField == null ||
                     dispatcherField.FieldType != dispatcherType ||
