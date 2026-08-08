@@ -38,6 +38,11 @@ namespace Schnellbausteine.AddIn
             Write(operation, phase, null);
         }
 
+        public static void Diagnostic(string operation, string detail)
+        {
+            Write(operation, "diagnostic", detail);
+        }
+
         public static bool Flush(TimeSpan timeout)
         {
             EnsureWriter();

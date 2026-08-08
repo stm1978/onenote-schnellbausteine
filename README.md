@@ -50,8 +50,8 @@ Gespeicherte Schnellbausteine bleiben dabei erhalten.
 2. Im Text-Kontextmenü **Als Schnellbaustein speichern...** wählen und einen
    eindeutigen Namen eingeben. Bei Namenskonflikten wird explizit nachgefragt,
    ob überschrieben oder ein anderer Name verwendet werden soll.
-3. Im Register **Start** in der Gruppe **Schnellbausteine** das Menü
-   **Einfügen** öffnen. Einträge sind alphabetisch sortiert.
+3. Im Register **Start** in der Gruppe **Schnellbausteine** auf
+   **Einfügen...** klicken und den alphabetisch sortierten Eintrag wählen.
 4. **Verwalten...** benennt Einträge um oder löscht sie nach Bestätigung.
 
 Beim Einfügen ersetzt ein Baustein markierten Text wie in Word. Reine
@@ -59,8 +59,10 @@ Textfragmente werden direkt in den Lauf eingefügt. Blockinhalte (Listen,
 Tabellen, Bilder oder mehrere Absätze) teilen den aktuellen Absatz sicher und
 werden dazwischen eingesetzt. Bei einem technisch nicht eindeutig teilbaren
 Cursor in Hyperlink- oder MathML-Inhalt wird der Baustein hinter dem betroffenen
-Absatz eingefügt; der Spezialinhalt bleibt unverändert. Kann OneNote gar keine
-Selection-Markierung liefern, wird am Ende des ersten Outlines eingefügt.
+Absatz eingefügt; der Spezialinhalt bleibt unverändert. Die Cursor- oder
+Auswahlmarkierung wird vor dem Öffnen des Auswahlfensters zusammen mit der
+Seiten-XML erfasst. Fehlt sie oder ist sie mehrdeutig, bricht das Add-in sichtbar
+ab, statt an einer geratenen Outline-Position einzufügen.
 
 ## Gespeicherte Daten
 
@@ -103,9 +105,10 @@ Zielseite abgebildet.
   `%LOCALAPPDATA%\Schnellbausteine\addin.log` prüfen.
 - **OneNote reagiert nach einem Befehl nicht:** `addin.log` enthält für Callback,
   STA-Dispatcher, OneNote-COM und Dialoge jeweils `before`/`after`-Phasen sowie
-  Prozess, Thread und Apartment. Die letzte `before`-Zeile ohne passende
-  `after`-Zeile grenzt den blockierenden Aufruf ein. Seiteninhalte, Namen und
-  Binärdaten werden nicht protokolliert.
+  Prozess, Thread und Apartment. Selection-Diagnosen nennen zusätzlich Scope,
+  Anzahl, Knotentypen, strukturelle XML-Pfade und den gewählten Anker. Die letzte
+  `before`-Zeile ohne passende `after`-Zeile grenzt den blockierenden Aufruf ein.
+  Seiteninhalte, Namen und Binärdaten werden nicht protokolliert.
 - **Bilder fehlen:** Den Baustein erneut speichern. Der Speichervorgang bricht
   sichtbar ab, wenn OneNote für ein Callback-Bild keine Binärdaten liefert.
 - **Defekter Katalog:** `catalog.json` wird nicht still verworfen. Die
@@ -163,4 +166,13 @@ pro Aktion erzeugt und explizit freigegeben; das von `OnConnection` gelieferte
 Application-Objekt wird nicht dauerhaft gehalten. Ribbon-Aktionen geben sofort
 an OneNote zurück. OneNote-COM-Aufrufe und WinForms-Dialoge laufen anschließend
 auf einem eigenen STA-Thread mit Windows-Message-Pump; Dialoge gehören dabei zum
-aktiven OneNote-Hauptfenster.
+aktiven OneNote-Hauptfenster. Beim Einfügen wird die mit
+`piBinaryDataSelection` gelesene Seite vor dem Öffnen des Auswahlfensters
+verankert und nach der Auswahl genau dieses unveränderte XML-Abbild aktualisiert.
+Der dabei erfasste `lastModifiedTime`-Wert verhindert, dass zwischenzeitliche
+Änderungen aus einem anderen Fenster oder durch Synchronisierung überschrieben
+werden; in diesem Fall bricht OneNote das Update sichtbar ab.
+Damit folgt der Einfügepfad wie OneMores öffentlich beschriebenes
+`SelectionRange`-/`PageEditor.InsertOrReplace`-Muster einer expliziten
+Selection-Range statt einer globalen Outline-Suche, ohne OneMore-Code zu
+übernehmen.

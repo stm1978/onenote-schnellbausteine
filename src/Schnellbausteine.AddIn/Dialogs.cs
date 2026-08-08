@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 using Schnellbausteine.Core;
@@ -45,6 +46,65 @@ namespace Schnellbausteine.AddIn
             base.OnShown(e);
             nameBox.SelectAll();
             nameBox.Focus();
+        }
+    }
+
+    internal sealed class InsertDialog : Form
+    {
+        private readonly ListBox list;
+
+        public InsertDialog(IList<Snippet> snippets)
+        {
+            Text = "Schnellbaustein einfugen";
+            StartPosition = FormStartPosition.CenterScreen;
+            MinimumSize = new Size(420, 280);
+            Size = new Size(520, 360);
+            ShowInTaskbar = false;
+
+            list = new ListBox
+            {
+                Dock = DockStyle.Fill,
+                DisplayMember = "Name",
+                DataSource = snippets
+            };
+            var buttons = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 46,
+                FlowDirection = FlowDirection.RightToLeft,
+                Padding = new Padding(6)
+            };
+            var cancel = new Button
+            {
+                Text = "Abbrechen",
+                Width = 90,
+                DialogResult = DialogResult.Cancel
+            };
+            var insert = new Button
+            {
+                Text = "Einfugen",
+                Width = 90,
+                DialogResult = DialogResult.OK,
+                Enabled = snippets.Count > 0
+            };
+            list.DoubleClick += delegate
+            {
+                if (SelectedSnippet != null)
+                {
+                    DialogResult = DialogResult.OK;
+                    Close();
+                }
+            };
+            buttons.Controls.AddRange(new Control[] { cancel, insert });
+            Controls.Add(list);
+            Controls.Add(buttons);
+            AcceptButton = insert;
+            CancelButton = cancel;
+        }
+
+        public Snippet SelectedSnippet
+        {
+            get { return list.SelectedItem as Snippet; }
         }
     }
 

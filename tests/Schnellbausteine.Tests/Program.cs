@@ -15,15 +15,33 @@ namespace Schnellbausteine.Tests
             RepositoryRejectsConflicts,
             AtomicFileReplacesContent,
             SelectionExtractsRichContentAndDependencies,
+            SelectionExtractionPrunesPartialParagraphSiblings,
+            SelectionExtractionPrunesPartialTableSiblings,
             EmptyCursorIsNotASelection,
+            SelectionDiagnosticsContainOnlyStructure,
+            CapturedSelectionSurvivesLaterSelectionLoss,
+            TextCursorUsesExactOutlineAndRun,
+            StoredTextSnippetRemainsInline,
             InlineSelectionIsReplaced,
+            MultipleSelectedRunsAreReplacedInPlace,
+            PartialParagraphAncestorPreservesUnselectedRuns,
             MultiParagraphSelectionIsReplaced,
             WholeParagraphSelectionIsReplaced,
             BlockInsertionSplitsAndRemapsTags,
+            BlockSelectionUsesExactChildBoundary,
+            BlockSelectionPreservesSuffixTag,
+            TableCellCursorStaysInCell,
+            PartialCellAncestorPreservesCellContent,
+            WholeTableCellIsReplaced,
+            ListCursorPreservesListPosition,
+            MultiParagraphListRangePreservesSuffixList,
+            MultiParagraphRangePreservesSuffixTag,
             RichSelectionPreservesSiblings,
             QuickStylesAreCapturedAndRemapped,
             SpecialCursorUsesSafeFallback,
-            MissingSelectionUsesOutlineEnd
+            MissingSelectionIsRejectedWithoutMutation,
+            AmbiguousSelectionIsRejectedWithoutMutation,
+            PartialBlockWithoutDescendantIsRejected
         };
 
         private static int Main()
@@ -99,12 +117,51 @@ namespace Schnellbausteine.Tests
             Assert(!snippet.Root.DescendantsAndSelf().Attributes("objectID").Any(), "objectID wurde nicht entfernt.");
         }
 
+        private static void SelectionExtractionPrunesPartialParagraphSiblings()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE selected=\"partial\">" +
+                "<one:T><![CDATA[vor]]></one:T><one:Image callbackID=\"unselected\"/>" +
+                "<one:T selected=\"partial\"><![CDATA[auswahl]]></one:T><one:T><![CDATA[nach]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+            XDocument snippet = OneNoteXml.ExtractSelection(page, callback =>
+            {
+                throw new Exception("Unselektiertes Bild wurde aufgelost: " + callback);
+            });
+            XmlEqualIgnoringNamespaceDeclarations(
+                Fragment("<one:OE><one:T><![CDATA[auswahl]]></one:T></one:OE>"),
+                snippet);
+        }
+
+        private static void SelectionExtractionPrunesPartialTableSiblings()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE><one:Table>" +
+                "<one:Columns><one:Column index=\"0\" width=\"100\"/><one:Column index=\"1\" width=\"120\"/></one:Columns><one:Row>" +
+                "<one:Cell><one:OEChildren><one:OE><one:T><![CDATA[andere Zelle]]></one:T></one:OE></one:OEChildren></one:Cell>" +
+                "<one:Cell selected=\"partial\"><one:OEChildren><one:OE>" +
+                "<one:T><![CDATA[vor]]></one:T><one:T selected=\"all\"><![CDATA[auswahl]]></one:T>" +
+                "<one:Image callbackID=\"unselected\"/></one:OE></one:OEChildren></one:Cell>" +
+                "</one:Row></one:Table></one:OE></one:OEChildren></one:Outline>");
+            XDocument snippet = OneNoteXml.ExtractSelection(page, callback =>
+            {
+                throw new Exception("Unselektiertes Tabellenbild wurde aufgelost: " + callback);
+            });
+            XmlEqualIgnoringNamespaceDeclarations(
+                Fragment(
+                    "<one:OE><one:Table>" +
+                    "<one:Columns><one:Column index=\"0\" width=\"100\"/><one:Column index=\"1\" width=\"120\"/></one:Columns><one:Row>" +
+                    "<one:Cell><one:OEChildren><one:OE><one:T><![CDATA[]]></one:T></one:OE></one:OEChildren></one:Cell>" +
+                    "<one:Cell><one:OEChildren><one:OE><one:T><![CDATA[auswahl]]></one:T></one:OE></one:OEChildren></one:Cell>" +
+                    "</one:Row></one:Table></one:OE>"),
+                snippet);
+        }
+
         private static void InlineSelectionIsReplaced()
         {
             XDocument page = Page("<one:Outline><one:OEChildren><one:OE><one:T><![CDATA[vor ]]></one:T><one:T selected=\"all\"><![CDATA[alt]]></one:T><one:T><![CDATA[ nach]]></one:T></one:OE></one:OEChildren></one:Outline>");
             OneNoteXml.Insert(page, Fragment("<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>"));
-            Equal("vor neu nach", string.Concat(page.Descendants(OneNoteXml.One + "T").Select(item => item.Value)));
-            Equal("", page.Descendants(OneNoteXml.One + "T").Single(item => (string)item.Attribute("selected") == "all").Value);
+            XmlEqual(Page("<one:Outline><one:OEChildren><one:OE><one:T><![CDATA[vor ]]></one:T><one:T><![CDATA[neu]]></one:T><one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[ nach]]></one:T></one:OE></one:OEChildren></one:Outline>"), page);
         }
 
         private static void EmptyCursorIsNotASelection()
@@ -112,6 +169,119 @@ namespace Schnellbausteine.Tests
             XDocument page = Page("<one:Outline><one:OEChildren><one:OE><one:T selected=\"all\"><![CDATA[]]></one:T></one:OE></one:OEChildren></one:Outline>");
             Assert(!OneNoteXml.HasSelection(page), "Ein leerer Cursor wurde als Inhalt behandelt.");
             Throws<InvalidOperationException>(() => OneNoteXml.ExtractSelection(page, null));
+        }
+
+        private static void SelectionDiagnosticsContainOnlyStructure()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE><one:T><![CDATA[geheim]]></one:T>" +
+                "<one:T selected=\"all\"><![CDATA[privat]]></one:T></one:OE></one:OEChildren></one:Outline>");
+            OneNoteSelectionInfo selection = OneNoteXml.AnalyzeSelection(page);
+            Equal("TextRange", selection.Scope);
+            Equal("Outline", selection.ContainerScope);
+            Equal(1, selection.MarkerCount);
+            Equal("T:1", selection.MarkerTypes);
+            Equal("/Page[1]/Outline[1]/OEChildren[1]/OE[1]/T[2]", selection.AnchorPath);
+            Assert(!selection.ToDiagnosticString().Contains("geheim"), "Diagnose enthalt unselektierten Nutztext.");
+            Assert(!selection.ToDiagnosticString().Contains("privat"), "Diagnose enthalt selektierten Nutztext.");
+        }
+
+        private static void CapturedSelectionSurvivesLaterSelectionLoss()
+        {
+            XDocument livePage = Page(
+                "<one:Outline><one:OEChildren><one:OE><one:T><![CDATA[erstes Outline]]></one:T></one:OE></one:OEChildren></one:Outline>" +
+                "<one:Outline><one:OEChildren><one:OE><one:T><![CDATA[vor]]></one:T><one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[nach]]></one:T></one:OE></one:OEChildren></one:Outline>");
+            var anchoredPage = new XDocument(livePage);
+            livePage.Descendants().Attributes("selected").Remove();
+
+            OneNoteInsertionResult result = OneNoteXml.InsertAtSelection(
+                anchoredPage,
+                Fragment("<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>"));
+
+            Equal("/Page[1]/Outline[2]/OEChildren[1]/OE[1]/T[2]", result.Selection.AnchorPath);
+            Equal("Inline", result.Strategy);
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren><one:OE><one:T><![CDATA[erstes Outline]]></one:T></one:OE></one:OEChildren></one:Outline>" +
+                "<one:Outline><one:OEChildren><one:OE><one:T><![CDATA[vor]]></one:T><one:T><![CDATA[neu]]></one:T><one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[nach]]></one:T></one:OE></one:OEChildren></one:Outline>"),
+                anchoredPage);
+            Throws<InvalidOperationException>(() => OneNoteXml.InsertAtSelection(
+                livePage,
+                Fragment("<one:OE><one:T><![CDATA[falsch]]></one:T></one:OE>")));
+        }
+
+        private static void TextCursorUsesExactOutlineAndRun()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE><one:T><![CDATA[nicht hier]]></one:T></one:OE></one:OEChildren></one:Outline>" +
+                "<one:Outline><one:OEChildren><one:OE><one:T><![CDATA[links]]></one:T><one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[rechts]]></one:T></one:OE></one:OEChildren></one:Outline>");
+            OneNoteXml.InsertAtSelection(page, Fragment("<one:OE><one:T><![CDATA[Mitte]]></one:T></one:OE>"));
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren><one:OE><one:T><![CDATA[nicht hier]]></one:T></one:OE></one:OEChildren></one:Outline>" +
+                "<one:Outline><one:OEChildren><one:OE><one:T><![CDATA[links]]></one:T><one:T><![CDATA[Mitte]]></one:T><one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[rechts]]></one:T></one:OE></one:OEChildren></one:Outline>"),
+                page);
+        }
+
+        private static void StoredTextSnippetRemainsInline()
+        {
+            WithTemporaryDirectory(path =>
+            {
+                XDocument source = Page(
+                    "<one:Outline><one:OEChildren><one:OE>" +
+                    "<one:T selected=\"all\"><![CDATA[gespeichert]]></one:T>" +
+                    "</one:OE></one:OEChildren></one:Outline>");
+                XDocument extracted = OneNoteXml.ExtractSelection(source, null);
+                var repository = new SnippetRepository(path);
+                Snippet snippet = repository.Save("Text", extracted, false);
+                XDocument loaded = repository.LoadFragment(snippet.Id);
+                Assert(
+                    loaded.Descendants(OneNoteXml.One + "OE").Single()
+                        .Attributes().Any(attribute => attribute.IsNamespaceDeclaration),
+                    "Der Roundtrip enthalt keine explizite Namespace-Deklaration.");
+
+                XDocument target = Page(
+                    "<one:Outline><one:OEChildren><one:OE>" +
+                    "<one:T><![CDATA[vor]]></one:T><one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[nach]]></one:T>" +
+                    "</one:OE></one:OEChildren></one:Outline>");
+                OneNoteInsertionResult result = OneNoteXml.InsertAtSelection(target, loaded);
+
+                Equal("Inline", result.Strategy);
+                XmlEqual(Page(
+                    "<one:Outline><one:OEChildren><one:OE>" +
+                    "<one:T><![CDATA[vor]]></one:T><one:T><![CDATA[gespeichert]]></one:T>" +
+                    "<one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[nach]]></one:T>" +
+                    "</one:OE></one:OEChildren></one:Outline>"), target);
+            });
+        }
+
+        private static void MultipleSelectedRunsAreReplacedInPlace()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE><one:T><![CDATA[vor]]></one:T>" +
+                "<one:T selected=\"partial\"><![CDATA[a]]></one:T><one:T selected=\"all\"><![CDATA[b]]></one:T>" +
+                "<one:T><![CDATA[nach]]></one:T></one:OE></one:OEChildren></one:Outline>");
+            OneNoteXml.InsertAtSelection(page, Fragment("<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>"));
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren><one:OE><one:T><![CDATA[vor]]></one:T>" +
+                "<one:T><![CDATA[neu]]></one:T><one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "<one:T><![CDATA[nach]]></one:T></one:OE></one:OEChildren></one:Outline>"),
+                page);
+        }
+
+        private static void PartialParagraphAncestorPreservesUnselectedRuns()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE selected=\"partial\">" +
+                "<one:T><![CDATA[vor]]></one:T><one:T selected=\"partial\"><![CDATA[alt]]></one:T>" +
+                "<one:T><![CDATA[nach]]></one:T></one:OE></one:OEChildren></one:Outline>");
+            OneNoteInsertionResult result = OneNoteXml.InsertAtSelection(
+                page,
+                Fragment("<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>"));
+            Equal("/Page[1]/Outline[1]/OEChildren[1]/OE[1]/T[2]", result.Selection.AnchorPath);
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren><one:OE>" +
+                "<one:T><![CDATA[vor]]></one:T><one:T><![CDATA[neu]]></one:T>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[nach]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>"), page);
         }
 
         private static void BlockInsertionSplitsAndRemapsTags()
@@ -122,16 +292,17 @@ namespace Schnellbausteine.Tests
             XDocument fragment = Fragment("<one:OE><one:Tag index=\"7\"/><one:Table><one:Row><one:Cell><one:OEChildren><one:OE><one:T><![CDATA[Tabelle]]></one:T></one:OE></one:OEChildren></one:Cell></one:Row></one:Table></one:OE>",
                 "<one:TagDef index=\"7\" type=\"0\" symbol=\"3\"/>");
             OneNoteXml.Insert(page, fragment);
-            Equal("vorTabellenach", string.Concat(page.Descendants(OneNoteXml.One + "T").Select(item => item.Value)));
+            Equal("vorTabelle" + string.Empty + "nach", string.Concat(page.Descendants(OneNoteXml.One + "T").Select(item => item.Value)));
             Equal("1", (string)page.Descendants(OneNoteXml.One + "Tag").Single().Attribute("index"));
             Equal(2, page.Root.Elements(OneNoteXml.One + "TagDef").Count());
+            Equal("Table", page.Descendants(OneNoteXml.One + "OEChildren").First().Elements(OneNoteXml.One + "OE").ElementAt(1).Elements().Last().Name.LocalName);
         }
 
         private static void WholeParagraphSelectionIsReplaced()
         {
             XDocument page = Page("<one:Outline><one:OEChildren><one:OE selected=\"all\"><one:T><![CDATA[alt]]></one:T></one:OE></one:OEChildren></one:Outline>");
             OneNoteXml.Insert(page, Fragment("<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>"));
-            Equal("neu", string.Concat(page.Descendants(OneNoteXml.One + "T").Select(item => item.Value)));
+            XmlEqual(Page("<one:Outline><one:OEChildren><one:OE><one:T><![CDATA[neu]]></one:T></one:OE><one:OE><one:T selected=\"all\"><![CDATA[]]></one:T></one:OE></one:OEChildren></one:Outline>"), page);
         }
 
         private static void MultiParagraphSelectionIsReplaced()
@@ -142,14 +313,165 @@ namespace Schnellbausteine.Tests
                 "<one:OE><one:T selected=\"all\"><![CDATA[zweit]]></one:T><one:T><![CDATA[nach]]></one:T></one:OE>" +
                 "</one:OEChildren></one:Outline>");
             OneNoteXml.Insert(page, Fragment("<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>"));
-            Equal("vorneunach", string.Concat(page.Descendants(OneNoteXml.One + "T").Select(item => item.Value)));
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren>" +
+                "<one:OE><one:T><![CDATA[vor]]></one:T></one:OE>" +
+                "<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>" +
+                "<one:OE><one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[nach]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>"), page);
+        }
+
+        private static void BlockSelectionUsesExactChildBoundary()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE>" +
+                "<one:T><![CDATA[vor]]></one:T><one:Image selected=\"all\"><one:Data>OLD</one:Data></one:Image>" +
+                "<one:T><![CDATA[nach]]></one:T></one:OE></one:OEChildren></one:Outline>");
+            OneNoteXml.InsertAtSelection(
+                page,
+                Fragment("<one:OE><one:Table><one:Row><one:Cell><one:OEChildren><one:OE><one:T><![CDATA[neu]]></one:T></one:OE></one:OEChildren></one:Cell></one:Row></one:Table></one:OE>"));
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren>" +
+                "<one:OE><one:T><![CDATA[vor]]></one:T></one:OE>" +
+                "<one:OE><one:Table><one:Row><one:Cell><one:OEChildren><one:OE><one:T><![CDATA[neu]]></one:T></one:OE></one:OEChildren></one:Cell></one:Row></one:Table></one:OE>" +
+                "<one:OE><one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[nach]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>"), page);
+        }
+
+        private static void BlockSelectionPreservesSuffixTag()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE><one:Tag index=\"3\"/>" +
+                "<one:T selected=\"all\"><![CDATA[alt]]></one:T><one:T><![CDATA[nach]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+            OneNoteXml.InsertAtSelection(
+                page,
+                Fragment("<one:OE><one:Table><one:Row><one:Cell><one:OEChildren><one:OE><one:T><![CDATA[block]]></one:T></one:OE></one:OEChildren></one:Cell></one:Row></one:Table></one:OE>"));
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren>" +
+                "<one:OE><one:Table><one:Row><one:Cell><one:OEChildren><one:OE><one:T><![CDATA[block]]></one:T></one:OE></one:OEChildren></one:Cell></one:Row></one:Table></one:OE>" +
+                "<one:OE><one:Tag index=\"3\"/><one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[nach]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>"), page);
+        }
+
+        private static void TableCellCursorStaysInCell()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE><one:Table><one:Row>" +
+                "<one:Cell><one:OEChildren><one:OE><one:T><![CDATA[A]]></one:T></one:OE></one:OEChildren></one:Cell>" +
+                "<one:Cell><one:OEChildren><one:OE><one:T><![CDATA[vor]]></one:T><one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[nach]]></one:T></one:OE></one:OEChildren></one:Cell>" +
+                "</one:Row></one:Table></one:OE></one:OEChildren></one:Outline>");
+            OneNoteInsertionResult result = OneNoteXml.InsertAtSelection(
+                page,
+                Fragment("<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>"));
+            Equal("TableCell", result.Selection.ContainerScope);
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren><one:OE><one:Table><one:Row>" +
+                "<one:Cell><one:OEChildren><one:OE><one:T><![CDATA[A]]></one:T></one:OE></one:OEChildren></one:Cell>" +
+                "<one:Cell><one:OEChildren><one:OE><one:T><![CDATA[vor]]></one:T><one:T><![CDATA[neu]]></one:T><one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[nach]]></one:T></one:OE></one:OEChildren></one:Cell>" +
+                "</one:Row></one:Table></one:OE></one:OEChildren></one:Outline>"), page);
+        }
+
+        private static void PartialCellAncestorPreservesCellContent()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE><one:Table><one:Row>" +
+                "<one:Cell selected=\"partial\"><one:OEChildren><one:OE>" +
+                "<one:T><![CDATA[vor]]></one:T><one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[nach]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Cell>" +
+                "</one:Row></one:Table></one:OE></one:OEChildren></one:Outline>");
+            OneNoteInsertionResult result = OneNoteXml.InsertAtSelection(
+                page,
+                Fragment("<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>"));
+            Equal("TableCell", result.Selection.ContainerScope);
+            Equal("Inline", result.Strategy);
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren><one:OE><one:Table><one:Row>" +
+                "<one:Cell><one:OEChildren><one:OE>" +
+                "<one:T><![CDATA[vor]]></one:T><one:T><![CDATA[neu]]></one:T>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[nach]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Cell>" +
+                "</one:Row></one:Table></one:OE></one:OEChildren></one:Outline>"), page);
+        }
+
+        private static void WholeTableCellIsReplaced()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE><one:Table><one:Row>" +
+                "<one:Cell selected=\"all\"><one:OEChildren><one:OE><one:T><![CDATA[alt]]></one:T></one:OE></one:OEChildren></one:Cell>" +
+                "<one:Cell><one:OEChildren><one:OE><one:T><![CDATA[bleibt]]></one:T></one:OE></one:OEChildren></one:Cell>" +
+                "</one:Row></one:Table></one:OE></one:OEChildren></one:Outline>");
+            OneNoteInsertionResult result = OneNoteXml.InsertAtSelection(
+                page,
+                Fragment("<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>"));
+            Equal("ReplaceTableCell", result.Strategy);
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren><one:OE><one:Table><one:Row>" +
+                "<one:Cell><one:OEChildren><one:OE><one:T><![CDATA[neu]]></one:T></one:OE><one:OE><one:T selected=\"all\"><![CDATA[]]></one:T></one:OE></one:OEChildren></one:Cell>" +
+                "<one:Cell><one:OEChildren><one:OE><one:T><![CDATA[bleibt]]></one:T></one:OE></one:OEChildren></one:Cell>" +
+                "</one:Row></one:Table></one:OE></one:OEChildren></one:Outline>"), page);
+        }
+
+        private static void ListCursorPreservesListPosition()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE><one:List><one:Bullet bullet=\"2\"/></one:List>" +
+                "<one:T><![CDATA[vor]]></one:T><one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[nach]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+            OneNoteXml.InsertAtSelection(page, Fragment("<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>"));
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren><one:OE><one:List><one:Bullet bullet=\"2\"/></one:List>" +
+                "<one:T><![CDATA[vor]]></one:T><one:T><![CDATA[neu]]></one:T><one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[nach]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>"), page);
+        }
+
+        private static void MultiParagraphListRangePreservesSuffixList()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren>" +
+                "<one:OE><one:List><one:Bullet bullet=\"2\"/></one:List><one:T><![CDATA[vor]]></one:T><one:T selected=\"partial\"><![CDATA[ab]]></one:T></one:OE>" +
+                "<one:OE><one:List><one:Bullet bullet=\"2\"/></one:List><one:T selected=\"partial\"><![CDATA[bis]]></one:T><one:T><![CDATA[nach]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>");
+            OneNoteXml.InsertAtSelection(
+                page,
+                Fragment("<one:OE><one:Table><one:Row><one:Cell><one:OEChildren><one:OE><one:T><![CDATA[block]]></one:T></one:OE></one:OEChildren></one:Cell></one:Row></one:Table></one:OE>"));
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren>" +
+                "<one:OE><one:List><one:Bullet bullet=\"2\"/></one:List><one:T><![CDATA[vor]]></one:T></one:OE>" +
+                "<one:OE><one:Table><one:Row><one:Cell><one:OEChildren><one:OE><one:T><![CDATA[block]]></one:T></one:OE></one:OEChildren></one:Cell></one:Row></one:Table></one:OE>" +
+                "<one:OE><one:List><one:Bullet bullet=\"2\"/></one:List><one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[nach]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>"), page);
+        }
+
+        private static void MultiParagraphRangePreservesSuffixTag()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren>" +
+                "<one:OE><one:T><![CDATA[vor]]></one:T><one:T selected=\"partial\"><![CDATA[ab]]></one:T></one:OE>" +
+                "<one:OE><one:Tag index=\"4\"/><one:T selected=\"partial\"><![CDATA[bis]]></one:T><one:T><![CDATA[nach]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>");
+            OneNoteXml.InsertAtSelection(
+                page,
+                Fragment("<one:OE><one:Table><one:Row><one:Cell><one:OEChildren><one:OE><one:T><![CDATA[block]]></one:T></one:OE></one:OEChildren></one:Cell></one:Row></one:Table></one:OE>"));
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren>" +
+                "<one:OE><one:T><![CDATA[vor]]></one:T></one:OE>" +
+                "<one:OE><one:Table><one:Row><one:Cell><one:OEChildren><one:OE><one:T><![CDATA[block]]></one:T></one:OE></one:OEChildren></one:Cell></one:Row></one:Table></one:OE>" +
+                "<one:OE><one:Tag index=\"4\"/><one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[nach]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>"), page);
         }
 
         private static void SpecialCursorUsesSafeFallback()
         {
             XDocument page = Page("<one:Outline><one:OEChildren><one:OE><one:T selected=\"all\"><![CDATA[<!--MathML--><a href=\"x\"></a>]]></one:T></one:OE></one:OEChildren></one:Outline>");
-            OneNoteXml.Insert(page, Fragment("<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>"));
-            Equal("<!--MathML--><a href=\"x\"></a>neu", string.Concat(page.Descendants(OneNoteXml.One + "T").Select(item => item.Value)));
+            OneNoteInsertionResult result = OneNoteXml.InsertAtSelection(page, Fragment("<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>"));
+            Equal("AfterSpecialParagraph", result.Strategy);
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren>" +
+                "<one:OE><one:T><![CDATA[<!--MathML--><a href=\"x\"></a>]]></one:T></one:OE>" +
+                "<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>" +
+                "<one:OE><one:T selected=\"all\"><![CDATA[]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>"), page);
         }
 
         private static void QuickStylesAreCapturedAndRemapped()
@@ -176,15 +498,53 @@ namespace Schnellbausteine.Tests
                 "<one:T><![CDATA[behalten]]></one:T>" +
                 "</one:OE></one:OEChildren></one:Outline>");
             OneNoteXml.Insert(page, Fragment("<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>"));
-            Equal("behaltenneu", string.Concat(page.Descendants(OneNoteXml.One + "T").Select(item => item.Value)));
-            Assert(!page.Descendants(OneNoteXml.One + "Image").Any(), "Das ausgewahlte Bild wurde nicht ersetzt.");
+            XmlEqual(Page(
+                "<one:Outline><one:OEChildren>" +
+                "<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>" +
+                "<one:OE><one:T selected=\"all\"><![CDATA[]]></one:T><one:T><![CDATA[behalten]]></one:T></one:OE>" +
+                "</one:OEChildren></one:Outline>"), page);
         }
 
-        private static void MissingSelectionUsesOutlineEnd()
+        private static void MissingSelectionIsRejectedWithoutMutation()
         {
             XDocument page = Page("<one:Outline><one:OEChildren><one:OE><one:T><![CDATA[alt]]></one:T></one:OE></one:OEChildren></one:Outline>");
-            OneNoteXml.Insert(page, Fragment("<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>"));
-            Equal("altneu", string.Concat(page.Descendants(OneNoteXml.One + "T").Select(item => item.Value)));
+            XDocument before = new XDocument(page);
+            OneNoteSelectionInfo selection = OneNoteXml.AnalyzeSelection(page);
+            Equal("Missing", selection.Scope);
+            Assert(!selection.IsUsable, "Fehlende Selection wurde als verwendbar gemeldet.");
+            Throws<InvalidOperationException>(() =>
+                OneNoteXml.InsertAtSelection(page, Fragment("<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>")));
+            XmlEqual(before, page);
+        }
+
+        private static void AmbiguousSelectionIsRejectedWithoutMutation()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE><one:T selected=\"all\"><![CDATA[]]></one:T></one:OE></one:OEChildren></one:Outline>" +
+                "<one:Outline><one:OEChildren><one:OE><one:T selected=\"all\"><![CDATA[]]></one:T></one:OE></one:OEChildren></one:Outline>");
+            XDocument before = new XDocument(page);
+            OneNoteSelectionInfo selection = OneNoteXml.AnalyzeSelection(page);
+            Equal("Ambiguous", selection.Scope);
+            Assert(selection.MarkerPaths.Contains("/Outline[1]/") &&
+                selection.MarkerPaths.Contains("/Outline[2]/"), "Diagnose enthalt nicht beide Markerpfade.");
+            Throws<InvalidOperationException>(() =>
+                OneNoteXml.InsertAtSelection(page, Fragment("<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>")));
+            XmlEqual(before, page);
+        }
+
+        private static void PartialBlockWithoutDescendantIsRejected()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE selected=\"partial\">" +
+                "<one:T><![CDATA[inhalt]]></one:T><one:Image callbackID=\"image1\"/>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+            XDocument before = new XDocument(page);
+            OneNoteSelectionInfo selection = OneNoteXml.AnalyzeSelection(page);
+            Equal("Ambiguous", selection.Scope);
+            Throws<InvalidOperationException>(() => OneNoteXml.ExtractSelection(page, callback => "DATA"));
+            Throws<InvalidOperationException>(() =>
+                OneNoteXml.InsertAtSelection(page, Fragment("<one:OE><one:T><![CDATA[neu]]></one:T></one:OE>")));
+            XmlEqual(before, page);
         }
 
         private static XDocument Page(string content)
@@ -196,6 +556,44 @@ namespace Schnellbausteine.Tests
         {
             return XDocument.Parse("<sq:Snippet xmlns:sq=\"" + OneNoteXml.Snippet + "\" xmlns:one=\"" + OneNoteXml.One + "\" version=\"1\"><sq:TagDefs>" +
                 definitions + "</sq:TagDefs><sq:QuickStyleDefs/><sq:Content>" + content + "</sq:Content></sq:Snippet>", LoadOptions.PreserveWhitespace);
+        }
+
+        private static void XmlEqual(XDocument expected, XDocument actual)
+        {
+            if (!XNode.DeepEquals(expected, actual))
+            {
+                throw new Exception(
+                    "XML weicht ab.\nErwartet: " + expected.ToString(SaveOptions.DisableFormatting) +
+                    "\nTatsachlich: " + actual.ToString(SaveOptions.DisableFormatting));
+            }
+        }
+
+        private static void XmlEqualIgnoringNamespaceDeclarations(
+            XDocument expected,
+            XDocument actual)
+        {
+            var expectedClone = new XDocument(expected);
+            var actualClone = new XDocument(actual);
+            expectedClone.Root.DescendantsAndSelf().Attributes()
+                .Where(attribute => attribute.IsNamespaceDeclaration)
+                .Remove();
+            actualClone.Root.DescendantsAndSelf().Attributes()
+                .Where(attribute => attribute.IsNamespaceDeclaration)
+                .Remove();
+            NormalizeEmptyElements(expectedClone);
+            NormalizeEmptyElements(actualClone);
+            XmlEqual(expectedClone, actualClone);
+        }
+
+        private static void NormalizeEmptyElements(XDocument document)
+        {
+            foreach (XElement element in document.Descendants()
+                .Where(candidate => !candidate.Nodes().Any())
+                .Reverse()
+                .ToList())
+            {
+                element.ReplaceWith(new XElement(element.Name, element.Attributes()));
+            }
         }
 
         private static void WithTemporaryDirectory(Action<string> action)

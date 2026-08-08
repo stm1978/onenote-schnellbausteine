@@ -24,12 +24,13 @@ namespace Schnellbausteine.AddIn
         private readonly SnippetRepository repository = new SnippetRepository(SnippetRepository.DefaultRoot);
         private readonly StaDispatcher dispatcher = new StaDispatcher();
         private Action<IntPtr> saveSelectionAction;
-        private IRibbonUI ribbon;
+        private Action<IntPtr> insertSnippetAction;
         private int operationActive;
 
         public AddIn()
         {
             saveSelectionAction = SaveSelectionCore;
+            insertSnippetAction = InsertSnippetCore;
         }
 
         public void OnConnection(object application, ext_ConnectMode connectMode, object addInInstance, ref Array custom)
@@ -55,17 +56,10 @@ namespace Schnellbausteine.AddIn
         public void OnDisconnection(ext_DisconnectMode removeMode, ref Array custom)
         {
             Log.Trace("addin.disconnection", "entry");
-            IRibbonUI disconnectedRibbon = Interlocked.Exchange(ref ribbon, null);
             bool dispatcherStopped = dispatcher.Shutdown(TimeSpan.FromSeconds(5));
-            if (dispatcherStopped && disconnectedRibbon != null && Marshal.IsComObject(disconnectedRibbon))
+            if (!dispatcherStopped)
             {
-                Log.Trace("ribbon.release", "before");
-                Marshal.FinalReleaseComObject(disconnectedRibbon);
-                Log.Trace("ribbon.release", "after");
-            }
-            else if (!dispatcherStopped)
-            {
-                Log.Info("STA-UI-Thread reagierte beim Beenden nicht; Ribbon-RCW wird nicht vorzeitig freigegeben.");
+                Log.Info("STA-UI-Thread reagierte beim Beenden nicht.");
             }
             Log.Trace("addin.disconnection", "exit");
             Log.Flush(TimeSpan.FromMilliseconds(500));
@@ -86,7 +80,6 @@ namespace Schnellbausteine.AddIn
         public void RibbonLoaded(IRibbonUI ribbonUi)
         {
             Log.Trace("ribbon.loaded", "entry");
-            ribbon = ribbonUi;
         }
 
         public bool CanSaveSelection(IRibbonControl control)
@@ -181,45 +174,11 @@ namespace Schnellbausteine.AddIn
                     Log.Trace("repository.save", "before");
                     repository.Save(dialog.SnippetName, fragment, overwrite);
                     Log.Trace("repository.save", "after");
-                    InvalidateMenu();
                     Log.Trace("command.SaveSelection", "exit-saved");
                     return;
                 }
             }
             Log.Trace("command.SaveSelection", "exit-cancelled");
-        }
-
-        public string GetSnippetMenuContent(IRibbonControl control)
-        {
-            Log.Trace("callback.GetSnippetMenuContent", "entry");
-            try
-            {
-                const string ns = "http://schemas.microsoft.com/office/2009/07/customui";
-                var menu = new XElement(XName.Get("menu", ns));
-                foreach (Snippet item in repository.GetAll())
-                {
-                    menu.Add(new XElement(XName.Get("button", ns),
-                        new XAttribute("id", "sqSnippet_" + item.Id),
-                        new XAttribute("label", item.Name),
-                        new XAttribute("tag", item.Id),
-                        new XAttribute("onAction", "InsertSnippet")));
-                }
-                if (!menu.HasElements)
-                {
-                    menu.Add(new XElement(XName.Get("button", ns),
-                        new XAttribute("id", "sqEmpty"),
-                        new XAttribute("label", "Keine Schnellbausteine gespeichert"),
-                        new XAttribute("enabled", "false")));
-                }
-                string xml = menu.ToString(SaveOptions.DisableFormatting);
-                Log.Trace("callback.GetSnippetMenuContent", "exit");
-                return xml;
-            }
-            catch (Exception exception)
-            {
-                Log.Error("Dynamisches Menu", exception);
-                return "<menu xmlns=\"http://schemas.microsoft.com/office/2009/07/customui\"><button id=\"sqError\" label=\"Fehler beim Laden\" enabled=\"false\"/></menu>";
-            }
         }
 
         public void InsertSnippet(IRibbonControl control)
@@ -228,54 +187,59 @@ namespace Schnellbausteine.AddIn
             var callbackBodyCompleted = new TaskCompletionSource<object>();
             try
             {
-                string snippetId;
-                try
-                {
-                    snippetId = control == null ? null : control.Tag;
-                }
-                catch (Exception exception)
-                {
-                    DispatchUserAction(
-                        "InsertSnippet",
-                        callbackBodyCompleted.Task,
-                        "Der Schnellbaustein konnte nicht eingefügt werden.",
-                        delegate
-                        {
-                            throw new InvalidOperationException(
-                                "Die ID des Schnellbausteins konnte nicht gelesen werden.", exception);
-                        });
-                    return;
-                }
                 DispatchUserAction(
                     "InsertSnippet",
                     callbackBodyCompleted.Task,
                     "Der Schnellbaustein konnte nicht eingefügt werden.",
-                    delegate
-                    {
-                        Log.Trace("command.InsertSnippet", "entry");
-                        if (string.IsNullOrEmpty(snippetId))
-                        {
-                            throw new InvalidOperationException("Der Schnellbaustein besitzt keine ID.");
-                        }
-                        Log.Trace("repository.load", "before");
-                        XDocument fragment = repository.LoadFragment(snippetId);
-                        Log.Trace("repository.load", "after");
-                        using (var oneNote = new OneNoteClient())
-                        {
-                            XDocument page = oneNote.ReadCurrentPage();
-                            Log.Trace("onenote.xml.insert", "before");
-                            OneNoteXml.Insert(page, fragment);
-                            Log.Trace("onenote.xml.insert", "after");
-                            oneNote.UpdateCurrentPage(page);
-                        }
-                        Log.Trace("command.InsertSnippet", "exit");
-                    });
+                    insertSnippetAction);
             }
             finally
             {
                 callbackBodyCompleted.SetResult(null);
                 Log.Trace("callback.InsertSnippet", "exit");
             }
+        }
+
+        private void InsertSnippetCore(IntPtr fallbackOwnerHandle)
+        {
+            Log.Trace("command.InsertSnippet", "entry");
+            using (var oneNote = new OneNoteClient())
+            {
+                XDocument anchoredPage = oneNote.ReadCurrentPage();
+                OneNoteSelectionInfo selection = OneNoteXml.AnalyzeSelection(anchoredPage);
+                Log.Diagnostic("onenote.selection.capture", selection.ToDiagnosticString());
+                if (!selection.IsUsable)
+                {
+                    throw new InvalidOperationException(selection.Problem);
+                }
+
+                IntPtr ownerHandle = oneNote.CurrentWindowHandle;
+                var owner = new WindowHandleOwner(
+                    ownerHandle == IntPtr.Zero ? fallbackOwnerHandle : ownerHandle);
+                using (var dialog = new InsertDialog(repository.GetAll()))
+                {
+                    Log.Trace("ui.InsertDialog", "before");
+                    DialogResult result = dialog.ShowDialog(owner);
+                    Log.Trace("ui.InsertDialog", "after-" + result);
+                    if (result != DialogResult.OK) return;
+                    Snippet snippet = dialog.SelectedSnippet;
+                    if (snippet == null)
+                    {
+                        throw new InvalidOperationException("Es wurde kein Schnellbaustein ausgewahlt.");
+                    }
+
+                    Log.Trace("repository.load", "before");
+                    XDocument fragment = repository.LoadFragment(snippet.Id);
+                    Log.Trace("repository.load", "after");
+                    Log.Trace("onenote.xml.insert", "before");
+                    OneNoteInsertionResult insertion =
+                        OneNoteXml.InsertAtSelection(anchoredPage, fragment);
+                    Log.Diagnostic("onenote.insert.anchor", insertion.ToDiagnosticString());
+                    Log.Trace("onenote.xml.insert", "after");
+                    oneNote.UpdateCurrentPage(anchoredPage);
+                }
+            }
+            Log.Trace("command.InsertSnippet", "exit");
         }
 
         public void ManageSnippets(IRibbonControl control)
@@ -290,7 +254,7 @@ namespace Schnellbausteine.AddIn
                     "Die Verwaltung konnte nicht geöffnet werden.",
                     delegate(IntPtr ownerHandle)
                     {
-                        using (var dialog = new ManageDialog(repository, InvalidateMenu))
+                        using (var dialog = new ManageDialog(repository, delegate { }))
                         {
                             Log.Trace("ui.ManageDialog", "before");
                             dialog.ShowDialog(new WindowHandleOwner(ownerHandle));
@@ -349,17 +313,6 @@ namespace Schnellbausteine.AddIn
                 Log.Error(errorMessage, exception);
             }
             Log.Trace("dispatch." + operation, "exit");
-        }
-
-        private void InvalidateMenu()
-        {
-            IRibbonUI activeRibbon = ribbon;
-            if (activeRibbon != null)
-            {
-                Log.Trace("ribbon.InvalidateControl", "before");
-                activeRibbon.InvalidateControl("sqInsertMenu");
-                Log.Trace("ribbon.InvalidateControl", "after");
-            }
         }
 
         private static void ShowError(string message, Exception exception, IntPtr ownerHandle)
