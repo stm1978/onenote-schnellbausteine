@@ -48,6 +48,8 @@ namespace Schnellbausteine.Tests
                     "dispatcher", BindingFlags.Instance | BindingFlags.NonPublic);
                 FieldInfo saveSelectionActionField = type.GetField(
                     "saveSelectionAction", BindingFlags.Instance | BindingFlags.NonPublic);
+                FieldInfo insertSnippetActionField = type.GetField(
+                    "insertSnippetAction", BindingFlags.Instance | BindingFlags.NonPublic);
                 Type dispatcherType = assembly.GetType(
                     "Schnellbausteine.AddIn.StaDispatcher", true);
                 logType = assembly.GetType("Schnellbausteine.AddIn.Log", true);
@@ -74,18 +76,20 @@ namespace Schnellbausteine.Tests
                 bool dispatcherWorks = VerifyDispatcher(
                     Activator.CreateInstance(dispatcherType), dispatcherType);
                 bool timeoutGuardWorks = VerifyCallbackTimeoutGuard();
-                bool callbackHarnessWorks = VerifySaveSelectionCallback(
-                    addIn, saveSelectionActionField);
+                bool saveCallbackHarnessWorks = VerifyDeferredCallback(
+                    addIn, saveSelectionActionField, "SaveSelection");
+                object insertAddIn = Activator.CreateInstance(type);
+                bool insertCallbackHarnessWorks = VerifyDeferredCallback(
+                    insertAddIn, insertSnippetActionField, "InsertSnippet");
                 bool visibilityCallback = (bool)type.GetMethod("CanSaveSelection").Invoke(
                     addIn, new object[] { null });
                 string ribbonXml = (string)type.GetMethod("GetCustomUI").Invoke(
                     addIn, new object[] { "Microsoft.OneNote" });
-                string menuXml = (string)type.GetMethod("GetSnippetMenuContent").Invoke(
-                    addIn, new object[] { null });
-
                 XNamespace ribbonNamespace =
                     "http://schemas.microsoft.com/office/2009/07/customui";
                 XDocument ribbon = XDocument.Parse(ribbonXml);
+                XElement insertButton = ribbon.Descendants(ribbonNamespace + "button")
+                    .SingleOrDefault(element => (string)element.Attribute("id") == "sqInsert");
                 XElement contextMenus = ribbon.Root.Element(ribbonNamespace + "contextMenus");
                 XElement textMenu = contextMenus == null
                     ? null
@@ -96,8 +100,10 @@ namespace Schnellbausteine.Tests
                     : textMenu.Elements(ribbonNamespace + "button").SingleOrDefault(
                         element => (string)element.Attribute("id") == "sqSaveSelection");
 
-                if (!ribbonXml.Contains("sqInsertMenu") ||
-                    !ribbonXml.Contains("label=\"Einfügen\"") ||
+                if (insertButton == null ||
+                    (string)insertButton.Attribute("label") != "Einfügen..." ||
+                    (string)insertButton.Attribute("onAction") != "InsertSnippet" ||
+                    ribbon.Descendants(ribbonNamespace + "dynamicMenu").Any() ||
                     saveButton == null ||
                     (string)saveButton.Attribute("label") != "Als Schnellbaustein speichern..." ||
                     (string)saveButton.Attribute("imageMso") !=
@@ -112,16 +118,21 @@ namespace Schnellbausteine.Tests
                     dispatcherField.FieldType != dispatcherType ||
                     saveSelectionActionField == null ||
                     saveSelectionActionField.FieldType != typeof(Action<IntPtr>) ||
+                    insertSnippetActionField == null ||
+                    insertSnippetActionField.FieldType != typeof(Action<IntPtr>) ||
                     dispatcherType.GetMethod("Post") == null ||
                     dispatcherType.GetMethod("PostAfterCallback") == null ||
                     dispatcherType.GetMethod("Shutdown") == null ||
                     !dispatcherWorks ||
                     !timeoutGuardWorks ||
-                    !callbackHarnessWorks ||
+                    !saveCallbackHarnessWorks ||
+                    !insertCallbackHarnessWorks ||
                     dispatchMethod == null ||
                     !CallsMember(saveSelectionMethod, dispatchMethod) ||
                     forbiddenCallbackConstructors.Any(
                         constructor => CallsMember(saveSelectionMethod, constructor)) ||
+                    forbiddenCallbackConstructors.Any(
+                        constructor => CallsMember(type.GetMethod("InsertSnippet"), constructor)) ||
                     !CallsMethod(type.GetMethod("InsertSnippet"), dispatchMethod) ||
                     !CallsMethod(type.GetMethod("ManageSnippets"), dispatchMethod) ||
                     hasDynamicCallSites ||
@@ -130,7 +141,7 @@ namespace Schnellbausteine.Tests
                     type.GetMethod("CanSaveSelection") == null ||
                     selectionMethod == null ||
                     type.GetMethod("SaveSelection") == null ||
-                    !menuXml.Contains("sqEmpty"))
+                    type.GetMethod("GetSnippetMenuContent") != null)
                 {
                     Console.Error.WriteLine("Ribbon content is incomplete.");
                     return 1;
@@ -246,8 +257,8 @@ namespace Schnellbausteine.Tests
             return result && shutdown;
         }
 
-        private static bool VerifySaveSelectionCallback(
-            object addIn, FieldInfo saveSelectionActionField)
+        private static bool VerifyDeferredCallback(
+            object addIn, FieldInfo actionField, string callbackName)
         {
             var actionCompleted = new ManualResetEvent(false);
             ApartmentState apartment = ApartmentState.Unknown;
@@ -260,7 +271,7 @@ namespace Schnellbausteine.Tests
             bool callbackFinished = false;
             try
             {
-                saveSelectionActionField.SetValue(addIn, new Action<IntPtr>(delegate
+                actionField.SetValue(addIn, new Action<IntPtr>(delegate
                 {
                     actionStartedBeforeReturn = !Volatile.Read(ref callbackReturned);
                     apartment = Thread.CurrentThread.GetApartmentState();
@@ -271,7 +282,7 @@ namespace Schnellbausteine.Tests
                 {
                     try
                     {
-                        addIn.GetType().GetMethod("SaveSelection").Invoke(
+                        addIn.GetType().GetMethod(callbackName).Invoke(
                             addIn, new object[] { null });
                     }
                     finally

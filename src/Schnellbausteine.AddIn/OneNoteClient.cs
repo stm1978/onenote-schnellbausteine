@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Xml.Linq;
 using Microsoft.Office.Interop.OneNote;
@@ -12,6 +13,8 @@ namespace Schnellbausteine.AddIn
         private IApplication application;
         private string currentPageId;
         private IntPtr currentWindowHandle;
+        private DateTime expectedLastModifiedTime;
+        private bool hasExpectedLastModifiedTime;
 
         public OneNoteClient()
         {
@@ -36,6 +39,22 @@ namespace Schnellbausteine.AddIn
                 currentPageId, out xml, PageInfo.piBinaryDataSelection, Schema2013);
             Log.Trace("onenote.application.GetPageContent", "after");
             XDocument page = XDocument.Parse(xml, LoadOptions.PreserveWhitespace);
+            XAttribute lastModified = page.Root == null
+                ? null
+                : page.Root.Attribute("lastModifiedTime");
+            DateTime parsedLastModified;
+            if (lastModified == null || !DateTime.TryParse(
+                lastModified.Value,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind,
+                out parsedLastModified))
+            {
+                throw new InvalidOperationException(
+                    "OneNote lieferte keinen gultigen Anderungszeitpunkt fur die aktive Seite.");
+            }
+            expectedLastModifiedTime = parsedLastModified;
+            hasExpectedLastModifiedTime = true;
+            Log.Diagnostic("onenote.selection", OneNoteXml.AnalyzeSelection(page).ToDiagnosticString());
             Log.Trace("onenote.page.read", "exit");
             return page;
         }
@@ -61,9 +80,19 @@ namespace Schnellbausteine.AddIn
         {
             Log.Trace("onenote.page.update", "entry");
             if (string.IsNullOrEmpty(currentPageId)) currentPageId = GetCurrentPageId();
+            if (!hasExpectedLastModifiedTime)
+            {
+                throw new InvalidOperationException(
+                    "Die Seite wurde vor dem Aktualisieren nicht mit Anderungszeitpunkt gelesen.");
+            }
             Log.Trace("onenote.application.UpdatePageContent", "before");
-            application.UpdatePageContent(page.ToString(SaveOptions.DisableFormatting), DateTime.MinValue, Schema2013, true);
+            application.UpdatePageContent(
+                page.ToString(SaveOptions.DisableFormatting),
+                expectedLastModifiedTime,
+                Schema2013,
+                false);
             Log.Trace("onenote.application.UpdatePageContent", "after");
+            hasExpectedLastModifiedTime = false;
             Log.Trace("onenote.page.update", "exit");
         }
 
