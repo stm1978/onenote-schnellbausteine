@@ -171,13 +171,15 @@ aktiven OneNote-Hauptfenster. Beim Einfügen wird die mit
 verankert und nach der Auswahl genau dieses unveränderte XML-Abbild aktualisiert.
 Der dabei erfasste `lastModifiedTime`-Wert verhindert, dass zwischenzeitliche
 Änderungen aus einem anderen Fenster oder durch Synchronisierung überschrieben
-werden; in diesem Fall bricht OneNote das Update sichtbar ab. Nach einem
-erfolgreichen Update liest das Add-in die Selection-Metadaten erneut, ermittelt
-die von OneNote vergebene `objectID` des leeren Cursorankers und ruft
-`NavigateTo(pageId, objectId)` auf. Dadurch erhält OneNote ein konkretes
-Editorziel statt nur einer Seitennavigation. Scheitert dieser Fokus-Schritt,
-bleibt der bereits eingefügte Inhalt erhalten und der Fehler wird protokolliert,
-ohne den erfolgreichen Insert durch einen modalen Hinweis zu blockieren.
+werden; in diesem Fall bricht OneNote das Update sichtbar ab. Das aktualisierte
+XML enthält einen validierten leeren `one:T selected="all"`-Cursoranker direkt
+nach dem eingefügten Inhalt. Nach einem erfolgreichen Update aktiviert das
+Add-in nur noch best-effort das zuvor erfasste OneNote-Hauptfenster. Es verwendet
+bewusst keine `NavigateTo`-Editornavigation, da OneNote dabei nach einem Insert
+abstürzen kann. Solange OneNote keine sichere Editorfokus-API bereitstellt, kann
+zum Weitertippen nach einem Ribbon-Insert ein Klick auf die Seite erforderlich
+sein. Ein Aktivierungsfehler wird ausschließlich protokolliert und blockiert den
+erfolgreichen Insert nicht durch einen modalen Hinweis.
 Damit folgt der Einfügepfad wie OneMores öffentlich beschriebenes
 `SelectionRange`-/`PageEditor.InsertOrReplace`-Muster einer expliziten
 Selection-Range statt einer globalen Outline-Suche, ohne OneMore-Code zu

@@ -13,11 +13,7 @@ namespace Schnellbausteine.Tests
         private sealed class FakeApplication : IOneNoteApplicationAdapter
         {
             public readonly List<string> Calls;
-            public string RefreshedXml;
             public Exception UpdateException;
-            public Exception NavigateException;
-            public string NavigatedPageId;
-            public string NavigatedObjectId;
 
             public FakeApplication(List<string> calls)
             {
@@ -36,7 +32,8 @@ namespace Schnellbausteine.Tests
             {
                 Calls.Add(
                     "read:" + pageId + ":" + includeBinaryData + ":" + includeSelection);
-                return RefreshedXml;
+                throw new InvalidOperationException(
+                    "Nach dem Update darf die Seite nicht erneut gelesen werden.");
             }
 
             public string GetBinaryPageContent(string pageId, string callbackId)
@@ -53,9 +50,8 @@ namespace Schnellbausteine.Tests
             public void NavigateTo(string pageId, string objectId)
             {
                 Calls.Add("navigate:" + pageId + ":" + objectId);
-                NavigatedPageId = pageId;
-                NavigatedObjectId = objectId;
-                if (NavigateException != null) throw NavigateException;
+                throw new InvalidOperationException(
+                    "Der Insert-Pfad darf NavigateTo nicht aufrufen.");
             }
 
             public void Dispose()
@@ -66,6 +62,7 @@ namespace Schnellbausteine.Tests
         private sealed class FakeWindowActivator : IOneNoteWindowActivator
         {
             private readonly List<string> calls;
+            public Exception ActivationException;
 
             public FakeWindowActivator(List<string> calls)
             {
@@ -75,6 +72,7 @@ namespace Schnellbausteine.Tests
             public void Activate(IntPtr windowHandle)
             {
                 calls.Add("activate:" + windowHandle.ToInt64());
+                if (ActivationException != null) throw ActivationException;
             }
         }
 
@@ -216,19 +214,18 @@ namespace Schnellbausteine.Tests
         {
             try
             {
-                UpdateReadBackNavigateAndActivationAreOrdered();
-                MissingFocusTargetIsReportedAfterUpdate();
-                NavigateFailureIsReportedAfterUpdate();
-                UpdateFailureDoesNotAttemptFocus();
-                PickerIsDisposedBeforeUpdateAndFocus();
-                FocusFailureIsNonModalAndDoesNotFailInsert();
+                InsertNeverNavigatesAndActivationFollowsUpdate();
+                ActivationFailureDoesNotFailSuccessfulUpdate();
+                UpdateFailureDoesNotAttemptActivation();
+                PickerIsDisposedBeforeUpdateAndActivation();
+                ActivationFailureIsNonModalAndDoesNotFailInsert();
                 CancelledPickerDoesNotUpdate();
                 TargetAlreadyForegroundAcceptsSetForegroundFalse();
                 CurrentForegroundAndTargetThreadsAreAttached();
                 AttachedThreadsAreDetachedInFinally();
                 MinimizedTargetIsRestoredBeforeActivation();
                 RejectedActivationDoesNotFailInsert();
-                Console.WriteLine("12/12 OneNote-Client-Harness-Tests erfolgreich.");
+                Console.WriteLine("11/11 OneNote-Client-Harness-Tests erfolgreich.");
                 return 0;
             }
             catch (Exception exception)
@@ -238,64 +235,45 @@ namespace Schnellbausteine.Tests
             }
         }
 
-        private static void UpdateReadBackNavigateAndActivationAreOrdered()
+        private static void InsertNeverNavigatesAndActivationFollowsUpdate()
         {
             var calls = new List<string>();
-            var application = new FakeApplication(calls)
-            {
-                RefreshedXml = PageXml("focus-object")
-            };
+            var application = new FakeApplication(calls);
             var activator = new FakeWindowActivator(calls);
             using (var client = CreateClient(application, activator))
             {
-                client.UpdateCurrentPageAndRestoreFocus(Page());
+                bool inserted = InsertSnippetOperation.Execute(
+                    client,
+                    Page(),
+                    new WindowHandleOwner(new IntPtr(123)),
+                    delegate { return new FakePicker(calls, true); },
+                    delegate { return Fragment(); });
+                Equal(true, inserted);
             }
 
             Equal(
-                "update,read:page-id:False:True,navigate:page-id:focus-object,activate:123",
+                "picker.show,picker.dispose,update,activate:123",
                 string.Join(",", calls));
-            Equal("page-id", application.NavigatedPageId);
-            Equal("focus-object", application.NavigatedObjectId);
+            NoCallStartsWith(calls, "navigate:");
+            NoCallStartsWith(calls, "read:");
         }
 
-        private static void MissingFocusTargetIsReportedAfterUpdate()
+        private static void ActivationFailureDoesNotFailSuccessfulUpdate()
         {
             var calls = new List<string>();
-            var application = new FakeApplication(calls)
+            var application = new FakeApplication(calls);
+            var activator = new FakeWindowActivator(calls)
             {
-                RefreshedXml = PageXml(null)
+                ActivationException = new InvalidOperationException("activation failed")
             };
-            using (var client = CreateClient(
-                application,
-                new FakeWindowActivator(calls)))
+            using (var client = CreateClient(application, activator))
             {
-                Throws<OneNoteFocusException>(
-                    delegate { client.UpdateCurrentPageAndRestoreFocus(Page()); });
+                client.UpdateCurrentPageAndActivateWindow(Page());
             }
-            Equal("update,read:page-id:False:True", string.Join(",", calls));
+            Equal("update,activate:123", string.Join(",", calls));
         }
 
-        private static void NavigateFailureIsReportedAfterUpdate()
-        {
-            var calls = new List<string>();
-            var application = new FakeApplication(calls)
-            {
-                RefreshedXml = PageXml("focus-object"),
-                NavigateException = new COMException("navigation failed")
-            };
-            using (var client = CreateClient(
-                application,
-                new FakeWindowActivator(calls)))
-            {
-                Throws<OneNoteFocusException>(
-                    delegate { client.UpdateCurrentPageAndRestoreFocus(Page()); });
-            }
-            Equal(
-                "update,read:page-id:False:True,navigate:page-id:focus-object",
-                string.Join(",", calls));
-        }
-
-        private static void UpdateFailureDoesNotAttemptFocus()
+        private static void UpdateFailureDoesNotAttemptActivation()
         {
             var calls = new List<string>();
             var application = new FakeApplication(calls)
@@ -307,18 +285,15 @@ namespace Schnellbausteine.Tests
                 new FakeWindowActivator(calls)))
             {
                 Throws<COMException>(
-                    delegate { client.UpdateCurrentPageAndRestoreFocus(Page()); });
+                    delegate { client.UpdateCurrentPageAndActivateWindow(Page()); });
             }
             Equal("update", string.Join(",", calls));
         }
 
-        private static void PickerIsDisposedBeforeUpdateAndFocus()
+        private static void PickerIsDisposedBeforeUpdateAndActivation()
         {
             var calls = new List<string>();
-            var application = new FakeApplication(calls)
-            {
-                RefreshedXml = PageXml("focus-object")
-            };
+            var application = new FakeApplication(calls);
             using (var client = CreateClient(
                 application,
                 new FakeWindowActivator(calls)))
@@ -332,22 +307,19 @@ namespace Schnellbausteine.Tests
                 Equal(true, inserted);
             }
             Equal(
-                "picker.show,picker.dispose,update,read:page-id:False:True," +
-                "navigate:page-id:focus-object,activate:123",
+                "picker.show,picker.dispose,update,activate:123",
                 string.Join(",", calls));
         }
 
-        private static void FocusFailureIsNonModalAndDoesNotFailInsert()
+        private static void ActivationFailureIsNonModalAndDoesNotFailInsert()
         {
             var calls = new List<string>();
-            var application = new FakeApplication(calls)
+            var application = new FakeApplication(calls);
+            var activator = new FakeWindowActivator(calls)
             {
-                RefreshedXml = PageXml("focus-object"),
-                NavigateException = new COMException("navigation failed")
+                ActivationException = new InvalidOperationException("activation failed")
             };
-            using (var client = CreateClient(
-                application,
-                new FakeWindowActivator(calls)))
+            using (var client = CreateClient(application, activator))
             {
                 bool inserted = InsertSnippetOperation.Execute(
                     client,
@@ -358,9 +330,9 @@ namespace Schnellbausteine.Tests
                 Equal(true, inserted);
             }
             Equal(
-                "picker.show,picker.dispose,update,read:page-id:False:True," +
-                "navigate:page-id:focus-object",
+                "picker.show,picker.dispose,update,activate:123",
                 string.Join(",", calls));
+            NoCallStartsWith(calls, "navigate:");
         }
 
         private static void CancelledPickerDoesNotUpdate()
@@ -459,10 +431,7 @@ namespace Schnellbausteine.Tests
         private static void RejectedActivationDoesNotFailInsert()
         {
             var calls = new List<string>();
-            var application = new FakeApplication(calls)
-            {
-                RefreshedXml = PageXml("focus-object")
-            };
+            var application = new FakeApplication(calls);
             var native = new FakeWindowNative(calls)
             {
                 SetForegroundResult = false,
@@ -510,16 +479,6 @@ namespace Schnellbausteine.Tests
                 LoadOptions.PreserveWhitespace);
         }
 
-        private static string PageXml(string objectId)
-        {
-            string id = objectId == null ? string.Empty : " objectID=\"" + objectId + "\"";
-            return "<one:Page xmlns:one=\"" + OneNoteXml.One + "\">" +
-                "<one:Outline selected=\"partial\"><one:OEChildren><one:OE" + id +
-                " selected=\"partial\">" +
-                "<one:T selected=\"all\"><![CDATA[]]></one:T>" +
-                "</one:OE></one:OEChildren></one:Outline></one:Page>";
-        }
-
         private static XDocument Fragment()
         {
             return XDocument.Parse(
@@ -544,6 +503,17 @@ namespace Schnellbausteine.Tests
             if (!values.Contains(expected))
             {
                 throw new Exception("Aufruf fehlt: " + expected);
+            }
+        }
+
+        private static void NoCallStartsWith(List<string> values, string prefix)
+        {
+            foreach (string value in values)
+            {
+                if (value.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    throw new Exception("Verbotener Aufruf: " + value);
+                }
             }
         }
 
