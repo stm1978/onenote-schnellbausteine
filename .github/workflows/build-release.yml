@@ -19,7 +19,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Prepare official Microsoft Office PIAs
         shell: powershell
@@ -112,8 +112,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $asset = "artifacts\setup\Schnellbausteine-Setup-${{ steps.version.outputs.value }}.exe"
-          gh release view "${{ github.ref_name }}" *> $null
-          if ($LASTEXITCODE -eq 0) {
+          $release = gh release list --limit 100 --json tagName | ConvertFrom-Json |
+            Where-Object tagName -eq "${{ github.ref_name }}"
+          if ($release) {
             gh release upload "${{ github.ref_name }}" $asset --clobber
           } else {
             $arguments = @(
