@@ -1,12 +1,12 @@
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "Beta 0.2"
 #endif
 #ifndef FileVersion
-  #define FileVersion "0.1.0.0"
+  #define FileVersion "0.2.0.0"
 #endif
 
-#define AppName "Schnellbausteine für OneNote"
-#define AppPublisher "Schnellbausteine"
+#define AppName "OneNote Schnellbausteine"
+#define AppPublisher "Stefan Malter | Malter365.de"
 #define AppIdValue "{{5B1518D1-0620-49BC-A423-0684C3E21917}"
 #define AddInClsid "{{CCF3B64A-9580-4D44-BDCE-49BFE95AC510}"
 #define AddInProgId "Schnellbausteine.OneNoteAddIn"
@@ -30,7 +30,7 @@ CloseApplications=no
 CloseApplicationsFilter=ONENOTE.EXE
 RestartApplications=no
 OutputDir=..\artifacts\setup
-OutputBaseFilename=Schnellbausteine-Setup-{#AppVersion}
+OutputBaseFilename=OneNote-Schnellbausteine-Setup-Beta-0.2
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -38,9 +38,10 @@ SetupLogging=yes
 UninstallDisplayName={#AppName}
 VersionInfoVersion={#FileVersion}
 VersionInfoCompany={#AppPublisher}
-VersionInfoDescription=Installer für das OneNote-Add-in Schnellbausteine
+VersionInfoDescription=Installer für OneNote Schnellbausteine – Beta 0.2
 VersionInfoProductName={#AppName}
 VersionInfoProductVersion={#FileVersion}
+VersionInfoProductTextVersion={#AppVersion}
 VersionInfoCopyright=Copyright (c) 2026
 MinVersion=10.0
 
@@ -49,9 +50,9 @@ Name: "german"; MessagesFile: "compiler:Languages\German.isl"
 
 [Messages]
 german.WelcomeLabel1=Willkommen beim Setup von [name]
-german.WelcomeLabel2=Dieses Programm installiert das OneNote-Add-in Schnellbausteine nur für Ihr Windows-Benutzerkonto.%n%nDie passende 32- oder 64-Bit-Version wird automatisch anhand Ihrer OneNote-Installation ausgewählt.%n%nOneNote muss während Installation und Deinstallation vollständig geschlossen sein.
+german.WelcomeLabel2=Dieses Programm installiert OneNote Schnellbausteine – Beta 0.2 nur für Ihr Windows-Benutzerkonto.%n%nDie passende 32- oder 64-Bit-Version wird automatisch anhand Ihrer OneNote-Installation ausgewählt.%n%nOneNote muss während Installation und Deinstallation vollständig geschlossen sein.
 german.FinishedHeadingLabel=Installation abgeschlossen
-german.FinishedLabelNoIcons=Schnellbausteine wurde erfolgreich für OneNote installiert.%n%nStarten Sie OneNote jetzt neu.
+german.FinishedLabelNoIcons=OneNote Schnellbausteine wurde erfolgreich installiert.%n%nStarten Sie OneNote jetzt neu.
 
 [Files]
 Source: "..\artifacts\x86\Release\Schnellbausteine.AddIn.dll"; DestDir: "{app}\x86"; Flags: ignoreversion; Check: InstallX86
@@ -77,7 +78,7 @@ Root: HKCU64; Subkey: "Software\Classes\AppID\{#AddInClsid}"; Flags: deletekey; 
 Root: HKCU64; Subkey: "Software\Classes\{#AddInProgId}"; Flags: deletekey; Check: IsWin64
 
 ; 32-bit OneNote registration.
-Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}"; ValueType: string; ValueData: "Schnellbausteine für OneNote"; Flags: uninsdeletekey; Check: InstallX86
+Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}"; ValueType: string; ValueData: "{#AppName}"; Flags: uninsdeletekey; Check: InstallX86
 Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}"; ValueType: string; ValueName: "AppID"; ValueData: "{#AddInClsid}"; Check: InstallX86
 Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}\ProgID"; ValueType: string; ValueData: "{#AddInProgId}"; Check: InstallX86
 Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}\VersionIndependentProgID"; ValueType: string; ValueData: "{#AddInProgId}"; Check: InstallX86
@@ -93,16 +94,16 @@ Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32\1.0.0
 Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32\1.0.0.0"; ValueType: string; ValueName: "Assembly"; ValueData: "{#AddInAssembly}"; Check: InstallX86
 Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32\1.0.0.0"; ValueType: string; ValueName: "RuntimeVersion"; ValueData: "v4.0.30319"; Check: InstallX86
 Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32\1.0.0.0"; ValueType: string; ValueName: "CodeBase"; ValueData: "{code:GetCodeBase|x86}"; Check: InstallX86
-Root: HKCU32; Subkey: "Software\Classes\{#AddInProgId}"; ValueType: string; ValueData: "Schnellbausteine für OneNote"; Flags: uninsdeletekey; Check: InstallX86
+Root: HKCU32; Subkey: "Software\Classes\{#AddInProgId}"; ValueType: string; ValueData: "{#AppName}"; Flags: uninsdeletekey; Check: InstallX86
 Root: HKCU32; Subkey: "Software\Classes\{#AddInProgId}\CLSID"; ValueType: string; ValueData: "{#AddInClsid}"; Check: InstallX86
-Root: HKCU32; Subkey: "Software\Classes\AppID\{#AddInClsid}"; ValueType: string; ValueData: "Schnellbausteine für OneNote"; Flags: uninsdeletekey; Check: InstallX86
+Root: HKCU32; Subkey: "Software\Classes\AppID\{#AddInClsid}"; ValueType: string; ValueData: "{#AppName}"; Flags: uninsdeletekey; Check: InstallX86
 Root: HKCU32; Subkey: "Software\Classes\AppID\{#AddInClsid}"; ValueType: string; ValueName: "DllSurrogate"; ValueData: ""; Check: InstallX86
-Root: HKCU32; Subkey: "Software\Microsoft\Office\OneNote\AddIns\{#AddInProgId}"; ValueType: string; ValueName: "FriendlyName"; ValueData: "Schnellbausteine"; Flags: uninsdeletekey; Check: InstallX86
-Root: HKCU32; Subkey: "Software\Microsoft\Office\OneNote\AddIns\{#AddInProgId}"; ValueType: string; ValueName: "Description"; ValueData: "Lokale Schnellbausteine für OneNote Desktop"; Check: InstallX86
+Root: HKCU32; Subkey: "Software\Microsoft\Office\OneNote\AddIns\{#AddInProgId}"; ValueType: string; ValueName: "FriendlyName"; ValueData: "{#AppName}"; Flags: uninsdeletekey; Check: InstallX86
+Root: HKCU32; Subkey: "Software\Microsoft\Office\OneNote\AddIns\{#AddInProgId}"; ValueType: string; ValueName: "Description"; ValueData: "{#AppName} – {#AppVersion}"; Check: InstallX86
 Root: HKCU32; Subkey: "Software\Microsoft\Office\OneNote\AddIns\{#AddInProgId}"; ValueType: dword; ValueName: "LoadBehavior"; ValueData: "3"; Check: InstallX86
 
 ; 64-bit OneNote registration.
-Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}"; ValueType: string; ValueData: "Schnellbausteine für OneNote"; Flags: uninsdeletekey; Check: InstallX64
+Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}"; ValueType: string; ValueData: "{#AppName}"; Flags: uninsdeletekey; Check: InstallX64
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}"; ValueType: string; ValueName: "AppID"; ValueData: "{#AddInClsid}"; Check: InstallX64
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\ProgID"; ValueType: string; ValueData: "{#AddInProgId}"; Check: InstallX64
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\VersionIndependentProgID"; ValueType: string; ValueData: "{#AddInProgId}"; Check: InstallX64
@@ -118,12 +119,12 @@ Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32\1.0.0
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32\1.0.0.0"; ValueType: string; ValueName: "Assembly"; ValueData: "{#AddInAssembly}"; Check: InstallX64
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32\1.0.0.0"; ValueType: string; ValueName: "RuntimeVersion"; ValueData: "v4.0.30319"; Check: InstallX64
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32\1.0.0.0"; ValueType: string; ValueName: "CodeBase"; ValueData: "{code:GetCodeBase|x64}"; Check: InstallX64
-Root: HKCU64; Subkey: "Software\Classes\{#AddInProgId}"; ValueType: string; ValueData: "Schnellbausteine für OneNote"; Flags: uninsdeletekey; Check: InstallX64
+Root: HKCU64; Subkey: "Software\Classes\{#AddInProgId}"; ValueType: string; ValueData: "{#AppName}"; Flags: uninsdeletekey; Check: InstallX64
 Root: HKCU64; Subkey: "Software\Classes\{#AddInProgId}\CLSID"; ValueType: string; ValueData: "{#AddInClsid}"; Check: InstallX64
-Root: HKCU64; Subkey: "Software\Classes\AppID\{#AddInClsid}"; ValueType: string; ValueData: "Schnellbausteine für OneNote"; Flags: uninsdeletekey; Check: InstallX64
+Root: HKCU64; Subkey: "Software\Classes\AppID\{#AddInClsid}"; ValueType: string; ValueData: "{#AppName}"; Flags: uninsdeletekey; Check: InstallX64
 Root: HKCU64; Subkey: "Software\Classes\AppID\{#AddInClsid}"; ValueType: string; ValueName: "DllSurrogate"; ValueData: ""; Check: InstallX64
-Root: HKCU64; Subkey: "Software\Microsoft\Office\OneNote\AddIns\{#AddInProgId}"; ValueType: string; ValueName: "FriendlyName"; ValueData: "Schnellbausteine"; Flags: uninsdeletekey; Check: InstallX64
-Root: HKCU64; Subkey: "Software\Microsoft\Office\OneNote\AddIns\{#AddInProgId}"; ValueType: string; ValueName: "Description"; ValueData: "Lokale Schnellbausteine für OneNote Desktop"; Check: InstallX64
+Root: HKCU64; Subkey: "Software\Microsoft\Office\OneNote\AddIns\{#AddInProgId}"; ValueType: string; ValueName: "FriendlyName"; ValueData: "{#AppName}"; Flags: uninsdeletekey; Check: InstallX64
+Root: HKCU64; Subkey: "Software\Microsoft\Office\OneNote\AddIns\{#AddInProgId}"; ValueType: string; ValueName: "Description"; ValueData: "{#AppName} – {#AppVersion}"; Check: InstallX64
 Root: HKCU64; Subkey: "Software\Microsoft\Office\OneNote\AddIns\{#AddInProgId}"; ValueType: dword; ValueName: "LoadBehavior"; ValueData: "3"; Check: InstallX64
 
 [Code]
@@ -313,7 +314,7 @@ begin
     BitnessText := '32 Bit';
 
   Result :=
-    'Setup ist bereit, Schnellbausteine für OneNote zu installieren.' + NewLine +
+    'Setup ist bereit, OneNote Schnellbausteine – Beta 0.2 zu installieren.' + NewLine +
     NewLine +
     'Erkannte OneNote-Version: ' + BitnessText + NewLine +
     'Installation: Nur für den aktuellen Benutzer (keine Administratorrechte)' +

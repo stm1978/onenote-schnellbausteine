@@ -251,7 +251,7 @@ namespace Schnellbausteine.Tests
                     mainMenu == null ||
                     ribbonGroup.Elements().Count() != 1 ||
                     (string)mainMenu.Attribute("id") != "sqMain" ||
-                    (string)mainMenu.Attribute("label") != "Schnellbausteine" ||
+                    (string)mainMenu.Attribute("label") != "OneNote Schnellbausteine" ||
                     (string)mainMenu.Attribute("size") != "large" ||
                     (string)mainMenu.Attribute("getContent") != "GetSnippetMenuContent" ||
                     mainMenu.Elements().Any() ||
@@ -269,7 +269,7 @@ namespace Schnellbausteine.Tests
                     manageButton == null ||
                     manageButton.Name != ribbonNamespace + "button" ||
                     !((string)manageButton.Attribute("id")).StartsWith("sqManage_") ||
-                    (string)manageButton.Attribute("label") != "Schnellbausteine verwalten" ||
+                    (string)manageButton.Attribute("label") != "OneNote Schnellbausteine verwalten" ||
                     (string)manageButton.Attribute("onAction") != "ManageSnippets" ||
                     ribbon.Descendants(ribbonNamespace + "gallery").Any() ||
                     ribbon.Descendants(ribbonNamespace + "menu").Any() ||
@@ -278,7 +278,7 @@ namespace Schnellbausteine.Tests
                     contextMenuElements.Any(element => element.Elements().Count() != 3) ||
                     insertMenus.Any(menuElement => menuElement == null) ||
                     insertMenus.Any(menuElement =>
-                        (string)menuElement.Attribute("label") != "Schnellbausteine" ||
+                        (string)menuElement.Attribute("label") != "OneNote Schnellbausteine" ||
                         (string)menuElement.Attribute("imageMso") !=
                             "QuickPartsInsertGallery" ||
                         (string)menuElement.Attribute("getContent") !=

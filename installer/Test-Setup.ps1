@@ -56,6 +56,19 @@ try {
 
     $assembly = Join-Path $appRoot "$Platform\Schnellbausteine.AddIn.dll"
     if (-not (Test-Path $assembly)) { throw "Installierte Assembly fehlt: $assembly" }
+    $assemblyInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($assembly)
+    if ($assemblyInfo.ProductName -ne "OneNote Schnellbausteine") {
+        throw "Assembly-Produktname ist inkonsistent: $($assemblyInfo.ProductName)"
+    }
+    if ($assemblyInfo.CompanyName -ne "Stefan Malter | Malter365.de") {
+        throw "Assembly-Publisher ist inkonsistent: $($assemblyInfo.CompanyName)"
+    }
+    if ($assemblyInfo.FileVersion -ne "0.2.0.0") {
+        throw "Assembly-Dateiversion ist inkonsistent: $($assemblyInfo.FileVersion)"
+    }
+    if ($assemblyInfo.ProductVersion -ne "Beta 0.2") {
+        throw "Assembly-Produktversion ist inkonsistent: $($assemblyInfo.ProductVersion)"
+    }
     $oneNotePia = Join-Path $appRoot "$Platform\Microsoft.Office.Interop.OneNote.dll"
     if (-not (Test-Path $oneNotePia)) {
         throw "Installierte OneNote-PIA fehlt: $oneNotePia"
@@ -101,6 +114,33 @@ try {
     }
     finally {
         $base.Close()
+    }
+
+    $uninstallBase = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
+        [Microsoft.Win32.RegistryHive]::CurrentUser,
+        [Microsoft.Win32.RegistryView]::Registry32)
+    try {
+        $uninstall = $uninstallBase.OpenSubKey(
+            "Software\Microsoft\Windows\CurrentVersion\Uninstall" +
+            "\{5B1518D1-0620-49BC-A423-0684C3E21917}_is1")
+        if (-not $uninstall) { throw "Add/Remove-Programs-Registrierung fehlt." }
+        try {
+            if ($uninstall.GetValue("DisplayName") -ne "OneNote Schnellbausteine") {
+                throw "ARP-Produktname ist inkonsistent."
+            }
+            if ($uninstall.GetValue("DisplayVersion") -ne "Beta 0.2") {
+                throw "ARP-DisplayVersion ist inkonsistent."
+            }
+            if ($uninstall.GetValue("Publisher") -ne "Stefan Malter | Malter365.de") {
+                throw "ARP-Publisher ist inkonsistent."
+            }
+        }
+        finally {
+            $uninstall.Close()
+        }
+    }
+    finally {
+        $uninstallBase.Close()
     }
 
     & $addInSmoke $assembly

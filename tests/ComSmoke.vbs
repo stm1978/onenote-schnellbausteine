@@ -7,7 +7,7 @@ Set addIn = CreateObject("Schnellbausteine.OneNoteAddIn")
 ribbonXml = addIn.GetCustomUI("Microsoft.OneNote")
 
 If InStr(ribbonXml, "id=""sqMain""") = 0 Or _
-   InStr(ribbonXml, "label=""Schnellbausteine""") = 0 Or _
+   InStr(ribbonXml, "label=""OneNote Schnellbausteine""") = 0 Or _
    InStr(ribbonXml, "<dynamicMenu") = 0 Or _
    InStr(ribbonXml, "getContent=""GetSnippetMenuContent""") = 0 Then
     WScript.Echo "Ribbon XML fehlt oder ist unvollstaendig."

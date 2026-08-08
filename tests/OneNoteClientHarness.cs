@@ -291,7 +291,7 @@ namespace Schnellbausteine.Tests
                 Equal(true, contentXml.Contains(
                     "label=\"A &amp; &lt;Alpha&gt;\""));
                 Equal("Zulu", (string)children[1].Attribute("label"));
-                Equal("Schnellbausteine verwalten",
+                Equal("OneNote Schnellbausteine verwalten",
                     (string)children[3].Attribute("label"));
                 Equal("ManageSnippets", (string)children[3].Attribute("onAction"));
                 Equal(alpha.Id, menu.GetSnippet(
@@ -322,7 +322,7 @@ namespace Schnellbausteine.Tests
                     (string)children[0].Attribute("label"));
                 Equal("false", (string)children[0].Attribute("enabled"));
                 Equal("menuSeparator", children[1].Name.LocalName);
-                Equal("Schnellbausteine verwalten",
+                Equal("OneNote Schnellbausteine verwalten",
                     (string)children[2].Attribute("label"));
                 Throws<InvalidOperationException>(
                     delegate { menu.GetSnippet("sqEmpty"); });

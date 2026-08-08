@@ -80,6 +80,10 @@ jobs:
         shell: powershell
         run: .\test.ps1 -Configuration Release -Platform x64
 
+      - name: Test branding and upgrade compatibility
+        shell: powershell
+        run: .\tests\Test-Branding.ps1
+
       - name: Determine version
         id: version
         shell: powershell
@@ -87,7 +91,7 @@ jobs:
           $version = if ("${{ github.ref_type }}" -eq "tag") {
             "${{ github.ref_name }}".TrimStart("v")
           } else {
-            "0.1.0-ci.${{ github.run_number }}"
+            "0.2.0-ci.${{ github.run_number }}"
           }
           "value=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
@@ -97,17 +101,17 @@ jobs:
 
       - name: Test x86 Setup lifecycle
         shell: powershell
-        run: .\installer\Test-Setup.ps1 -SetupPath "artifacts\setup\Schnellbausteine-Setup-${{ steps.version.outputs.value }}.exe" -Platform x86 -SkipHostActivation
+        run: .\installer\Test-Setup.ps1 -SetupPath "artifacts\setup\OneNote-Schnellbausteine-Setup-Beta-0.2.exe" -Platform x86 -SkipHostActivation
 
       - name: Test x64 Setup lifecycle
         shell: powershell
-        run: .\installer\Test-Setup.ps1 -SetupPath "artifacts\setup\Schnellbausteine-Setup-${{ steps.version.outputs.value }}.exe" -Platform x64 -SkipHostActivation
+        run: .\installer\Test-Setup.ps1 -SetupPath "artifacts\setup\OneNote-Schnellbausteine-Setup-Beta-0.2.exe" -Platform x64 -SkipHostActivation
 
       - name: Upload Setup artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Schnellbausteine-Setup-${{ steps.version.outputs.value }}
-          path: artifacts/setup/Schnellbausteine-Setup-${{ steps.version.outputs.value }}.exe
+          name: OneNote-Schnellbausteine-Beta-0.2
+          path: artifacts/setup/OneNote-Schnellbausteine-Setup-Beta-0.2.exe
           if-no-files-found: error
 
       - name: Create or update GitHub Release
@@ -116,7 +120,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $asset = "artifacts\setup\Schnellbausteine-Setup-${{ steps.version.outputs.value }}.exe"
+          $asset = "artifacts\setup\OneNote-Schnellbausteine-Setup-Beta-0.2.exe"
           $release = gh release list --limit 100 --json tagName | ConvertFrom-Json |
             Where-Object tagName -eq "${{ github.ref_name }}"
           if ($release) {
@@ -124,7 +128,7 @@ jobs:
           } else {
             $arguments = @(
               "release", "create", "${{ github.ref_name }}", $asset,
-              "--title", "Schnellbausteine ${{ github.ref_name }}",
+              "--title", "OneNote Schnellbausteine – Beta 0.2",
               "--generate-notes"
             )
             if ("${{ github.ref_name }}" -match "-(preview|beta|rc)") {

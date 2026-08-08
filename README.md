@@ -1,6 +1,8 @@
-# Schnellbausteine für OneNote
+# OneNote Schnellbausteine
 
-Schnellbausteine ist ein bewusst kleines, lokales COM-Add-in für **OneNote
+**Beta 0.2** von **Stefan Malter | Malter365.de**
+
+OneNote Schnellbausteine ist ein bewusst kleines, lokales COM-Add-in für **OneNote
 Desktop unter Windows** (Microsoft 365 bzw. OneNote 2016). Markierte
 OneNote-Inhalte lassen sich als benannte Bausteine speichern und später über das
 Start-Menüband an der Cursorposition wieder einfügen.
@@ -19,17 +21,20 @@ kopierten OneMore-Quellcode.
 > Gespeicherte Bausteine unter `%LOCALAPPDATA%\Schnellbausteine\Data` werden
 > dabei nicht gelöscht.
 
-## Installation für Endnutzer
+## Beta 0.2 herunterladen und installieren
 
-1. Auf der
-   [Release-Seite](https://github.com/stm1978/onenote-schnellbausteine/releases)
-   die neueste, nicht zurückgezogene Datei
-   **`Schnellbausteine-Setup-....exe`** herunterladen.
+> [!IMPORTANT]
+> Dies ist eine öffentliche Testversion. Bitte wichtige OneNote-Notizbücher wie
+> gewohnt synchronisieren bzw. sichern.
+
+1. Im Release
+   [**OneNote Schnellbausteine – Beta 0.2**](https://github.com/stm1978/onenote-schnellbausteine/releases/tag/v0.2.0-beta.1)
+   die Datei **`OneNote-Schnellbausteine-Setup-Beta-0.2.exe`** herunterladen.
 2. OneNote vollständig schließen.
 3. Die heruntergeladene Setup-Datei doppelklicken und **Installieren** wählen.
 4. OneNote neu starten.
 
-Setup erkennt automatisch, ob OneNote 32 oder 64 Bit verwendet, und installiert
+Das universelle Setup erkennt automatisch, ob OneNote 32 oder 64 Bit verwendet, und installiert
 die passende Add-in-Version ausschließlich für das aktuelle Windows-Konto.
 Administratorrechte und PowerShell-Befehle sind nicht erforderlich.
 
@@ -37,8 +42,10 @@ Administratorrechte und PowerShell-Befehle sind nicht erforderlich.
 Microsoft 365 oder OneNote 2016. ARM64 ist im MVP nicht enthalten.
 
 Die Deinstallation erfolgt wie bei anderen Windows-Programmen unter
-**Einstellungen > Apps > Installierte Apps > Schnellbausteine für OneNote**.
-Gespeicherte Schnellbausteine bleiben dabei erhalten.
+**Einstellungen > Apps > Installierte Apps > OneNote Schnellbausteine**.
+Gespeicherte Schnellbausteine unter
+`%LOCALAPPDATA%\Schnellbausteine\Data` bleiben bei der Deinstallation
+standardmäßig erhalten.
 
 > Die Vorabversion ist noch nicht digital signiert. Windows SmartScreen kann
 > deshalb beim ersten Start **Weitere Informationen > Trotzdem ausführen**
@@ -53,7 +60,7 @@ Gespeicherte Schnellbausteine bleiben dabei erhalten.
    oder ein anderer Name verwendet werden soll.
 3. Im Register **Start** auf **Schnellbausteine** klicken und den gewünschten,
    alphabetisch sortierten direkten nativen Office-Menüeintrag wählen. Unter der
-   nativen Trennlinie öffnet **Schnellbausteine verwalten** die bestehende
+   nativen Trennlinie öffnet **OneNote Schnellbausteine verwalten** die bestehende
    Verwaltung zum Umbenennen oder Löschen nach Bestätigung.
 
 Beim Einfügen ersetzt ein Baustein markierten Text wie in Word. Reine
@@ -69,12 +76,6 @@ Outline-Position einzufügen.
 
 Menü, Tastatursteuerung, Escape und Click-away werden vollständig von Office
 bereitgestellt; das Add-in öffnet keine eigene Popup-Oberfläche.
-
-> **Experimentell:** Offline lässt sich nicht beweisen, ob OneNote die
-> `piBinaryDataSelection`-Markierung beim Wechsel vom Seiteneditor in die native
-> Ribbon-Menü bis zum direkten `button.onAction` erhält. Der Insertionspfad protokolliert
-> deshalb ausschließlich Scope, Markertypen, Markeranzahl und XML-Pfade, niemals
-> Nutztext, und fügt ohne eindeutige Markierung nichts ein.
 
 Ist der Ziel-Textcontainer schmaler als der gespeicherte Baustein, verbreitert das
 Add-in nur diesen Container auf die gespeicherte Mindestbreite. Breitere Container
@@ -104,6 +105,8 @@ diese optionale Angabe bleiben lesbar und verändern die Zielbreite nicht.
 
 ## Einschränkungen
 
+- Nach dem Einfügen kann ein Klick auf die OneNote-Seite erforderlich sein, bevor
+  direkt weitergetippt werden kann.
 - Nur OneNote Desktop für Windows; nicht OneNote im Web, macOS oder die alte
   Windows-10-Store-App.
 - Keine Cloud-Synchronisierung, Kategorien, KI, Vorlagen oder Platzhalter.
@@ -136,12 +139,9 @@ diese optionale Angabe bleiben lesbar und verändern die Zielbreite nicht.
   **Schnellbausteine** wieder aktivieren.
 - **LoadBehavior wird 2:** Setup erneut ausführen und
   `%LOCALAPPDATA%\Schnellbausteine\addin.log` prüfen.
-- **OneNote reagiert nach einem Befehl nicht:** `addin.log` enthält für Callback,
-  STA-Dispatcher, OneNote-COM und Dialoge jeweils `before`/`after`-Phasen sowie
-  Prozess, Thread und Apartment. Selection-Diagnosen nennen zusätzlich Scope,
-  Anzahl, Knotentypen, strukturelle XML-Pfade und den gewählten Anker. Die letzte
-  `before`-Zeile ohne passende `after`-Zeile grenzt den blockierenden Aufruf ein.
-  Seiteninhalte, Namen und Binärdaten werden nicht protokolliert.
+- **OneNote reagiert nach einem Befehl nicht:** OneNote vollständig schließen und
+  neu starten. Bleibt das Problem bestehen, bitte ein
+  [GitHub-Issue](https://github.com/stm1978/onenote-schnellbausteine/issues) erstellen.
 - **Bilder fehlen:** Den Baustein erneut speichern. Der Speichervorgang bricht
   sichtbar ab, wenn OneNote für ein Callback-Bild keine Binärdaten liefert.
 - **Defekter Katalog:** `catalog.json` wird nicht still verworfen. Die
@@ -161,9 +161,9 @@ Dispatch-Bindung.
 ```powershell
 .\test.ps1 -Configuration Release -Platform x86
 .\test.ps1 -Configuration Release -Platform x64
-.\installer\Build-Setup.ps1 -Version 0.1.0
+.\installer\Build-Setup.ps1 -Version 0.2.0-beta.1
 .\tests\Test-OneNoteStartup.ps1 `
-    -SetupPath .\artifacts\setup\Schnellbausteine-Setup-0.1.0.exe
+    -SetupPath .\artifacts\setup\OneNote-Schnellbausteine-Setup-Beta-0.2.exe
 ```
 
 Die Build-Ausgaben liegen unter `artifacts\<Plattform>\<Konfiguration>`, Setup
@@ -235,7 +235,7 @@ Selection-Range statt einer globalen Outline-Suche, ohne OneMore-Code zu
    prüfen.
 2. Den Test in einem zweiten Outline wiederholen und bestätigen, dass niemals in
    das erste Outline oder eine andere Position eingefügt wird.
-3. **Schnellbausteine verwalten** öffnen, Bausteine umbenennen und löschen sowie
+3. **OneNote Schnellbausteine verwalten** öffnen, Bausteine umbenennen und löschen sowie
    einen neuen Baustein speichern; nach jedem CRUD-Vorgang die aktualisierte,
    alphabetischen Menüeinträge und den deaktivierten Leerzustand prüfen.
 4. Ganze Tabelle, vollständige Zeilen, vollständige Spalten und einen

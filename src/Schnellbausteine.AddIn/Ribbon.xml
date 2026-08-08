@@ -3,8 +3,8 @@
   <ribbon>
     <tabs>
       <tab idMso="TabInsert">
-        <group id="sqGroup" label="Schnellbausteine">
-          <dynamicMenu id="sqMain" label="Schnellbausteine" imageMso="QuickPartsInsertGallery"
+        <group id="sqGroup" label="OneNote Schnellbausteine">
+          <dynamicMenu id="sqMain" label="OneNote Schnellbausteine" imageMso="QuickPartsInsertGallery"
                        size="large" getContent="GetSnippetMenuContent"/>
         </group>
       </tab>
@@ -12,28 +12,28 @@
   </ribbon>
   <contextMenus>
     <contextMenu idMso="ContextMenuText">
-      <dynamicMenu id="sqInsertText" label="Schnellbausteine" imageMso="QuickPartsInsertGallery"
+      <dynamicMenu id="sqInsertText" label="OneNote Schnellbausteine" imageMso="QuickPartsInsertGallery"
                    getContent="GetSnippetMenuContent" insertBeforeMso="Cut"/>
       <menuSeparator id="sqContextSeparatorText" insertBeforeMso="Cut"/>
       <button id="sqSaveSelectionText" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery"
               onAction="SaveSelection" insertBeforeMso="Cut"/>
     </contextMenu>
     <contextMenu idMso="ContextMenuOutlineElementHandle">
-      <dynamicMenu id="sqInsertOutline" label="Schnellbausteine" imageMso="QuickPartsInsertGallery"
+      <dynamicMenu id="sqInsertOutline" label="OneNote Schnellbausteine" imageMso="QuickPartsInsertGallery"
                    getContent="GetSnippetMenuContent"/>
       <menuSeparator id="sqContextSeparatorOutline"/>
       <button id="sqSaveSelectionOutline" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery"
               onAction="SaveSelection"/>
     </contextMenu>
     <contextMenu idMso="ContextMenuInkDrawing">
-      <dynamicMenu id="sqInsertInk" label="Schnellbausteine" imageMso="QuickPartsInsertGallery"
+      <dynamicMenu id="sqInsertInk" label="OneNote Schnellbausteine" imageMso="QuickPartsInsertGallery"
                    getContent="GetSnippetMenuContent"/>
       <menuSeparator id="sqContextSeparatorInk"/>
       <button id="sqSaveSelectionInk" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery"
               onAction="SaveSelection"/>
     </contextMenu>
     <contextMenu idMso="ContextMenuLassoSelection">
-      <dynamicMenu id="sqInsertLasso" label="Schnellbausteine" imageMso="QuickPartsInsertGallery"
+      <dynamicMenu id="sqInsertLasso" label="OneNote Schnellbausteine" imageMso="QuickPartsInsertGallery"
                    getContent="GetSnippetMenuContent"/>
       <menuSeparator id="sqContextSeparatorLasso"/>
       <button id="sqSaveSelectionLasso" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery"

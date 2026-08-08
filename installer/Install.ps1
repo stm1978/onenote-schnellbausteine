@@ -28,7 +28,7 @@ $codeBase = ([Uri]$assemblyPath).AbsoluteUri
 
 try {
     $class = $base.CreateSubKey("Software\Classes\CLSID\$clsid")
-    $class.SetValue("", "Schnellbausteine für OneNote")
+    $class.SetValue("", "OneNote Schnellbausteine")
     $class.SetValue("AppID", $clsid)
     $class.CreateSubKey("ProgID").SetValue("", $progId)
     $class.CreateSubKey("VersionIndependentProgID").SetValue("", $progId)
@@ -52,18 +52,18 @@ try {
     $class.Close()
 
     $prog = $base.CreateSubKey("Software\Classes\$progId")
-    $prog.SetValue("", "Schnellbausteine für OneNote")
+    $prog.SetValue("", "OneNote Schnellbausteine")
     $prog.CreateSubKey("CLSID").SetValue("", $clsid)
     $prog.Close()
 
     $appId = $base.CreateSubKey("Software\Classes\AppID\$clsid")
-    $appId.SetValue("", "Schnellbausteine für OneNote")
+    $appId.SetValue("", "OneNote Schnellbausteine")
     $appId.SetValue("DllSurrogate", "")
     $appId.Close()
 
     $addIn = $base.CreateSubKey("Software\Microsoft\Office\OneNote\AddIns\$progId")
-    $addIn.SetValue("FriendlyName", "Schnellbausteine")
-    $addIn.SetValue("Description", "Lokale Schnellbausteine für OneNote Desktop")
+    $addIn.SetValue("FriendlyName", "OneNote Schnellbausteine")
+    $addIn.SetValue("Description", "OneNote Schnellbausteine – Beta 0.2")
     $addIn.SetValue("LoadBehavior", 3, [Microsoft.Win32.RegistryValueKind]::DWord)
     $addIn.Close()
 }
@@ -71,4 +71,4 @@ finally {
     $base.Close()
 }
 
-Write-Host "Schnellbausteine ($Platform) für den aktuellen Benutzer installiert. OneNote jetzt starten."
+Write-Host "OneNote Schnellbausteine ($Platform) für den aktuellen Benutzer installiert. OneNote jetzt starten."
