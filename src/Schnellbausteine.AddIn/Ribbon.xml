@@ -12,7 +12,7 @@
   </ribbon>
   <contextMenus>
     <contextMenu idMso="ContextMenuText">
-      <button id="sqSaveSelection" label="Als Schnellbaustein speichern..." imageMso="QuickPartsSaveSelectionToQuickPartGallery" onAction="SaveSelection" getVisible="CanSaveSelection"/>
+      <button id="sqSaveSelection" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery" onAction="SaveSelection" insertBeforeMso="Cut"/>
     </contextMenu>
   </contextMenus>
 </customUI>

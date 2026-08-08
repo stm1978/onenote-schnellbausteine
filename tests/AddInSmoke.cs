@@ -1,5 +1,7 @@
 using System;
+using System.Linq;
 using System.Reflection;
+using System.Xml.Linq;
 
 namespace Schnellbausteine.Tests
 {
@@ -23,8 +25,29 @@ namespace Schnellbausteine.Tests
                 string menuXml = (string)type.GetMethod("GetSnippetMenuContent").Invoke(
                     addIn, new object[] { null });
 
+                XNamespace ribbonNamespace =
+                    "http://schemas.microsoft.com/office/2009/07/customui";
+                XDocument ribbon = XDocument.Parse(ribbonXml);
+                XElement contextMenus = ribbon.Root.Element(ribbonNamespace + "contextMenus");
+                XElement textMenu = contextMenus == null
+                    ? null
+                    : contextMenus.Elements(ribbonNamespace + "contextMenu").SingleOrDefault(
+                        element => (string)element.Attribute("idMso") == "ContextMenuText");
+                XElement saveButton = textMenu == null
+                    ? null
+                    : textMenu.Elements(ribbonNamespace + "button").SingleOrDefault(
+                        element => (string)element.Attribute("id") == "sqSaveSelection");
+
                 if (!ribbonXml.Contains("sqInsertMenu") ||
                     !ribbonXml.Contains("label=\"Einfügen\"") ||
+                    saveButton == null ||
+                    (string)saveButton.Attribute("label") != "Als Schnellbaustein speichern..." ||
+                    (string)saveButton.Attribute("imageMso") !=
+                        "SaveSelectionToQuickPartGallery" ||
+                    (string)saveButton.Attribute("onAction") != "SaveSelection" ||
+                    (string)saveButton.Attribute("insertBeforeMso") != "Cut" ||
+                    saveButton.Attribute("getVisible") != null ||
+                    type.GetMethod("SaveSelection") == null ||
                     !menuXml.Contains("sqEmpty"))
                 {
                     Console.Error.WriteLine("Ribbon content is incomplete.");

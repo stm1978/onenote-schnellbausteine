@@ -47,22 +47,6 @@ namespace Schnellbausteine.AddIn
             ribbon = ribbonUi;
         }
 
-        public bool CanSaveSelection(IRibbonControl control)
-        {
-            try
-            {
-                using (var oneNote = new OneNoteClient())
-                {
-                    return OneNoteXml.HasSelection(oneNote.ReadCurrentPage());
-                }
-            }
-            catch (Exception exception)
-            {
-                Log.Error("Auswahlstatus", exception);
-                return false;
-            }
-        }
-
         public void SaveSelection(IRibbonControl control)
         {
             try
