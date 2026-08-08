@@ -2,7 +2,7 @@
 <customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui" onLoad="RibbonLoaded">
   <ribbon>
     <tabs>
-      <tab idMso="TabHome">
+      <tab idMso="TabInsert">
         <group id="sqGroup" label="Schnellbausteine">
           <dynamicMenu id="sqMain" label="Schnellbausteine" imageMso="QuickPartsInsertGallery"
                        size="large" getContent="GetSnippetMenuContent"/>
@@ -12,16 +12,32 @@
   </ribbon>
   <contextMenus>
     <contextMenu idMso="ContextMenuText">
-      <button id="sqSaveSelectionText" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery" onAction="SaveSelection" insertBeforeMso="Cut"/>
+      <dynamicMenu id="sqInsertText" label="Schnellbausteine" imageMso="QuickPartsInsertGallery"
+                   getContent="GetSnippetMenuContent" insertBeforeMso="Cut"/>
+      <menuSeparator id="sqContextSeparatorText" insertBeforeMso="Cut"/>
+      <button id="sqSaveSelectionText" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery"
+              onAction="SaveSelection" insertBeforeMso="Cut"/>
     </contextMenu>
     <contextMenu idMso="ContextMenuOutlineElementHandle">
-      <button id="sqSaveSelectionOutline" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery" onAction="SaveSelection"/>
+      <dynamicMenu id="sqInsertOutline" label="Schnellbausteine" imageMso="QuickPartsInsertGallery"
+                   getContent="GetSnippetMenuContent"/>
+      <menuSeparator id="sqContextSeparatorOutline"/>
+      <button id="sqSaveSelectionOutline" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery"
+              onAction="SaveSelection"/>
     </contextMenu>
     <contextMenu idMso="ContextMenuInkDrawing">
-      <button id="sqSaveSelectionInk" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery" onAction="SaveSelection"/>
+      <dynamicMenu id="sqInsertInk" label="Schnellbausteine" imageMso="QuickPartsInsertGallery"
+                   getContent="GetSnippetMenuContent"/>
+      <menuSeparator id="sqContextSeparatorInk"/>
+      <button id="sqSaveSelectionInk" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery"
+              onAction="SaveSelection"/>
     </contextMenu>
     <contextMenu idMso="ContextMenuLassoSelection">
-      <button id="sqSaveSelectionLasso" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery" onAction="SaveSelection"/>
+      <dynamicMenu id="sqInsertLasso" label="Schnellbausteine" imageMso="QuickPartsInsertGallery"
+                   getContent="GetSnippetMenuContent"/>
+      <menuSeparator id="sqContextSeparatorLasso"/>
+      <button id="sqSaveSelectionLasso" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery"
+              onAction="SaveSelection"/>
     </contextMenu>
   </contextMenus>
 </customUI>

@@ -161,8 +161,12 @@ namespace Schnellbausteine.Tests
                     null);
                 object menuAddIn = repositoryConstructor.Invoke(
                     new[] { menuRepository });
+                Type ribbonControlType = menuContentMethod.GetParameters()[0].ParameterType;
+                object mainMenuControl = new RibbonControlProxy(
+                    ribbonControlType,
+                    "sqMain").GetTransparentProxy();
                 string menuContentXml = (string)menuContentMethod.Invoke(
-                    menuAddIn, new object[] { null });
+                    menuAddIn, new[] { mainMenuControl });
                 bool itemCallbackHarnessWorks = VerifyDeferredMenuCallback(
                     menuAddIn,
                     insertSnippetActionField,
@@ -174,6 +178,8 @@ namespace Schnellbausteine.Tests
                 XDocument ribbon = XDocument.Parse(ribbonXml);
                 XElement ribbonGroup = ribbon.Descendants(ribbonNamespace + "group")
                     .SingleOrDefault(element => (string)element.Attribute("id") == "sqGroup");
+                XElement insertTab = ribbon.Descendants(ribbonNamespace + "tab")
+                    .SingleOrDefault(element => (string)element.Attribute("idMso") == "TabInsert");
                 XElement mainMenu = ribbonGroup == null
                     ? null
                     : ribbonGroup.Elements(ribbonNamespace + "dynamicMenu").SingleOrDefault();
@@ -197,6 +203,13 @@ namespace Schnellbausteine.Tests
                     "sqSaveSelectionInk",
                     "sqSaveSelectionLasso"
                 };
+                string[] insertMenuIds =
+                {
+                    "sqInsertText",
+                    "sqInsertOutline",
+                    "sqInsertInk",
+                    "sqInsertLasso"
+                };
                 XElement[] contextMenuElements = contextMenus == null
                     ? new XElement[0]
                     : contextMenuIds.Select(id => contextMenus
@@ -209,8 +222,24 @@ namespace Schnellbausteine.Tests
                         : menuElement.Elements(ribbonNamespace + "button").SingleOrDefault(
                             element => (string)element.Attribute("id") == saveButtonIds[index]))
                     .ToArray();
+                XElement[] insertMenus = contextMenuElements
+                    .Select((menuElement, index) => menuElement == null
+                        ? null
+                        : menuElement.Elements(ribbonNamespace + "dynamicMenu")
+                            .SingleOrDefault(element =>
+                                (string)element.Attribute("id") == insertMenuIds[index]))
+                    .ToArray();
+                XElement[] contextSeparators = contextMenuElements
+                    .Select(menuElement => menuElement == null
+                        ? null
+                        : menuElement.Elements(ribbonNamespace + "menuSeparator")
+                            .SingleOrDefault())
+                    .ToArray();
 
-                if (mainMenu == null ||
+                if (insertTab == null ||
+                    ribbon.Descendants(ribbonNamespace + "tab")
+                        .Any(element => (string)element.Attribute("idMso") == "TabHome") ||
+                    mainMenu == null ||
                     ribbonGroup.Elements().Count() != 1 ||
                     (string)mainMenu.Attribute("id") != "sqMain" ||
                     (string)mainMenu.Attribute("label") != "Schnellbausteine" ||
@@ -226,16 +255,27 @@ namespace Schnellbausteine.Tests
                     (string)snippetButton.Attribute("onAction") != "InsertSnippet" ||
                     separator == null ||
                     separator.Name != ribbonNamespace + "menuSeparator" ||
-                    (string)separator.Attribute("id") != "sqManageSeparator" ||
+                    !((string)separator.Attribute("id"))
+                        .StartsWith("sqManageSeparator_") ||
                     manageButton == null ||
                     manageButton.Name != ribbonNamespace + "button" ||
-                    (string)manageButton.Attribute("id") != "sqManage" ||
+                    !((string)manageButton.Attribute("id")).StartsWith("sqManage_") ||
                     (string)manageButton.Attribute("label") != "Schnellbausteine verwalten" ||
                     (string)manageButton.Attribute("onAction") != "ManageSnippets" ||
                     ribbon.Descendants(ribbonNamespace + "gallery").Any() ||
                     ribbon.Descendants(ribbonNamespace + "menu").Any() ||
                     ribbon.Descendants(ribbonNamespace + "form").Any() ||
                     contextMenuElements.Any(element => element == null) ||
+                    contextMenuElements.Any(element => element.Elements().Count() != 3) ||
+                    insertMenus.Any(menuElement => menuElement == null) ||
+                    insertMenus.Any(menuElement =>
+                        (string)menuElement.Attribute("label") != "Schnellbausteine" ||
+                        (string)menuElement.Attribute("imageMso") !=
+                            "QuickPartsInsertGallery" ||
+                        (string)menuElement.Attribute("getContent") !=
+                            "GetSnippetMenuContent" ||
+                        menuElement.Elements().Any()) ||
+                    contextSeparators.Any(separatorElement => separatorElement == null) ||
                     saveButtons.Any(button => button == null) ||
                     saveButtons.Any(button =>
                         (string)button.Attribute("label") != "Als Schnellbaustein speichern..." ||
@@ -245,6 +285,12 @@ namespace Schnellbausteine.Tests
                         button.Attribute("getVisible") != null ||
                         button.Attribute("getEnabled") != null) ||
                     (string)saveButtons[0].Attribute("insertBeforeMso") != "Cut" ||
+                    (string)insertMenus[0].Attribute("insertBeforeMso") != "Cut" ||
+                    (string)contextSeparators[0].Attribute("insertBeforeMso") != "Cut" ||
+                    ribbon.Descendants()
+                        .Where(element => element.Attribute("id") != null)
+                        .GroupBy(element => (string)element.Attribute("id"))
+                        .Any(group => group.Count() != 1) ||
                     applicationField == null ||
                     applicationField.FieldType != applicationAdapterInterfaceType ||
                     piaApplicationField == null ||

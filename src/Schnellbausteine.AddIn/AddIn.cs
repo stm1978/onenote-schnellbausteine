@@ -24,6 +24,14 @@ namespace Schnellbausteine.AddIn
     {
         private readonly SnippetRepository repository;
         private readonly SnippetMenuModel menu;
+        private static readonly string[] SnippetMenuControlIds =
+        {
+            "sqMain",
+            "sqInsertText",
+            "sqInsertOutline",
+            "sqInsertInk",
+            "sqInsertLasso"
+        };
         private readonly StaDispatcher dispatcher = new StaDispatcher();
         private Action<IntPtr> saveSelectionAction;
         private Action<Snippet, IntPtr> insertSnippetAction;
@@ -193,7 +201,7 @@ namespace Schnellbausteine.AddIn
         public string GetSnippetMenuContent(IRibbonControl control)
         {
             Log.Trace("callback.GetSnippetMenuContent", "entry-no-com");
-            return menu.RefreshAndGetContent();
+            return menu.RefreshAndGetContent(control == null ? null : control.Id);
         }
 
         public void InsertSnippet(IRibbonControl control)
@@ -291,9 +299,12 @@ namespace Schnellbausteine.AddIn
             menu.Invalidate();
             IRibbonUI currentRibbonUi = ribbonUi;
             if (currentRibbonUi == null) return;
-            Log.Trace("ribbon.invalidate.sqMain", "before");
-            currentRibbonUi.InvalidateControl("sqMain");
-            Log.Trace("ribbon.invalidate.sqMain", "after");
+            foreach (string controlId in SnippetMenuControlIds)
+            {
+                Log.Trace("ribbon.invalidate." + controlId, "before");
+                currentRibbonUi.InvalidateControl(controlId);
+                Log.Trace("ribbon.invalidate." + controlId, "after");
+            }
         }
 
         private void DispatchUserAction(
@@ -365,8 +376,8 @@ namespace Schnellbausteine.AddIn
         private const string EmptyLabel = "Keine Schnellbausteine gespeichert";
         private readonly SnippetRepository repository;
         private readonly object gate = new object();
-        private IDictionary<string, Snippet> snapshot =
-            new Dictionary<string, Snippet>(StringComparer.Ordinal);
+        private readonly IDictionary<string, IDictionary<string, Snippet>> snapshots =
+            new Dictionary<string, IDictionary<string, Snippet>>(StringComparer.Ordinal);
         private bool valid;
 
         public SnippetMenuModel(SnippetRepository repository)
@@ -375,10 +386,15 @@ namespace Schnellbausteine.AddIn
             this.repository = repository;
         }
 
-        public string RefreshAndGetContent()
+        public string RefreshAndGetContent(string menuControlId)
         {
             lock (gate)
             {
+                if (string.IsNullOrEmpty(menuControlId))
+                {
+                    throw new InvalidOperationException(
+                        "Die Schnellbaustein-Menüinstanz ist nicht eindeutig.");
+                }
                 IList<Snippet> snippets = repository.GetAll()
                     .OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
                     .ToList();
@@ -390,7 +406,7 @@ namespace Schnellbausteine.AddIn
                 {
                     content.Add(new XElement(
                         Ribbon + "button",
-                        new XAttribute("id", "sqEmpty"),
+                        new XAttribute("id", "sqEmpty_" + generation),
                         new XAttribute("label", EmptyLabel),
                         new XAttribute("enabled", "false")));
                 }
@@ -410,13 +426,13 @@ namespace Schnellbausteine.AddIn
                 content.Add(
                     new XElement(
                         Ribbon + "menuSeparator",
-                        new XAttribute("id", "sqManageSeparator")),
+                        new XAttribute("id", "sqManageSeparator_" + generation)),
                     new XElement(
                         Ribbon + "button",
-                        new XAttribute("id", "sqManage"),
+                        new XAttribute("id", "sqManage_" + generation),
                         new XAttribute("label", "Schnellbausteine verwalten"),
                         new XAttribute("onAction", "ManageSnippets")));
-                snapshot = nextSnapshot;
+                snapshots[menuControlId] = nextSnapshot;
                 valid = true;
                 return content.ToString(SaveOptions.DisableFormatting);
             }
@@ -428,13 +444,17 @@ namespace Schnellbausteine.AddIn
             {
                 EnsureSnapshot();
                 Snippet snippet;
-                if (string.IsNullOrEmpty(controlId) ||
-                    !snapshot.TryGetValue(controlId, out snippet))
+                if (string.IsNullOrEmpty(controlId))
                 {
                     throw new InvalidOperationException(
                         "Die ausgewählte Menüposition ist nicht mehr eindeutig.");
                 }
-                return snippet;
+                foreach (IDictionary<string, Snippet> snapshot in snapshots.Values)
+                {
+                    if (snapshot.TryGetValue(controlId, out snippet)) return snippet;
+                }
+                throw new InvalidOperationException(
+                    "Die ausgewählte Menüposition ist nicht mehr eindeutig.");
             }
         }
 
@@ -443,6 +463,7 @@ namespace Schnellbausteine.AddIn
             lock (gate)
             {
                 valid = false;
+                snapshots.Clear();
             }
         }
 

@@ -278,7 +278,7 @@ namespace Schnellbausteine.Tests
                 Snippet zulu = repository.Save("Zulu", Fragment(), false);
                 Snippet alpha = repository.Save("A & <Alpha>", Fragment(), false);
                 var menu = new SnippetMenuModel(repository);
-                string contentXml = menu.RefreshAndGetContent();
+                string contentXml = menu.RefreshAndGetContent("sqMain");
                 XDocument content = XDocument.Parse(contentXml);
                 XNamespace ribbon =
                     "http://schemas.microsoft.com/office/2009/07/customui";
@@ -314,7 +314,8 @@ namespace Schnellbausteine.Tests
             WithTemporaryRepository(delegate(SnippetRepository repository)
             {
                 var menu = new SnippetMenuModel(repository);
-                XDocument content = XDocument.Parse(menu.RefreshAndGetContent());
+                XDocument content = XDocument.Parse(
+                    menu.RefreshAndGetContent("sqInsertText"));
                 XElement[] children = content.Root.Elements().ToArray();
                 Equal(3, children.Length);
                 Equal("Keine Schnellbausteine gespeichert",
@@ -356,29 +357,48 @@ namespace Schnellbausteine.Tests
             {
                 Snippet alpha = repository.Save("Alpha", Fragment(), false);
                 var menu = new SnippetMenuModel(repository);
-                XDocument first = XDocument.Parse(menu.RefreshAndGetContent());
+                XDocument first = XDocument.Parse(
+                    menu.RefreshAndGetContent("sqMain"));
                 string staleId = (string)first.Root.Elements().First()
                     .Attribute("id");
+                XDocument context = XDocument.Parse(
+                    menu.RefreshAndGetContent("sqInsertText"));
+                string contextId = (string)context.Root.Elements().First()
+                    .Attribute("id");
+                Equal(alpha.Id, menu.GetSnippet(staleId).Id);
+                Equal(alpha.Id, menu.GetSnippet(contextId).Id);
+
+                XDocument refreshedRibbon = XDocument.Parse(
+                    menu.RefreshAndGetContent("sqMain"));
+                string refreshedRibbonId = (string)refreshedRibbon.Root
+                    .Elements().First().Attribute("id");
+                Throws<InvalidOperationException>(
+                    delegate { menu.GetSnippet(staleId); });
+                Equal(alpha.Id, menu.GetSnippet(contextId).Id);
+                Equal(alpha.Id, menu.GetSnippet(refreshedRibbonId).Id);
 
                 Snippet zulu = repository.Save("Zulu", Fragment(), false);
                 menu.Invalidate();
                 Throws<InvalidOperationException>(
-                    delegate { menu.GetSnippet(staleId); });
-                XDocument second = XDocument.Parse(menu.RefreshAndGetContent());
+                    delegate { menu.GetSnippet(contextId); });
+                XDocument second = XDocument.Parse(
+                    menu.RefreshAndGetContent("sqMain"));
                 Equal(4, second.Root.Elements().Count());
                 Throws<InvalidOperationException>(
-                    delegate { menu.GetSnippet(staleId); });
+                    delegate { menu.GetSnippet(contextId); });
 
                 repository.Rename(zulu.Id, "Aaron");
                 menu.Invalidate();
-                XDocument third = XDocument.Parse(menu.RefreshAndGetContent());
+                XDocument third = XDocument.Parse(
+                    menu.RefreshAndGetContent("sqInsertOutline"));
                 Equal("Aaron", (string)third.Root.Elements().First()
                     .Attribute("label"));
 
                 repository.Delete(alpha.Id);
                 repository.Delete(zulu.Id);
                 menu.Invalidate();
-                XDocument empty = XDocument.Parse(menu.RefreshAndGetContent());
+                XDocument empty = XDocument.Parse(
+                    menu.RefreshAndGetContent("sqInsertInk"));
                 Equal("false", (string)empty.Root.Elements().First()
                     .Attribute("enabled"));
             });

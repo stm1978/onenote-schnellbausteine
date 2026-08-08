@@ -199,11 +199,15 @@ pro Aktion erzeugt und explizit freigegeben; das von `OnConnection` gelieferte
 Application-Objekt wird nicht dauerhaft gehalten. Ribbon-Aktionen geben sofort
 an OneNote zurück. OneNote-COM-Aufrufe und WinForms-Dialoge laufen anschließend
 auf einem eigenen STA-Thread mit Windows-Message-Pump; Dialoge gehören dabei zum
-aktiven OneNote-Hauptfenster. Das einzelne Ribbon-Control ist ein natives
-Office-`dynamicMenu`, dessen Inhalt direkt aus alphabetisch sortierten nativen
-Buttons, einer nativen Trennlinie und dem abschließenden Manage-Button besteht.
-Der synchrone `getContent`-Callback greift nur auf das lokale Repository-Snapshot
-zu und erzeugt kein OneNote-COM-Objekt. Erst `button.onAction` stellt den Insert
+aktiven OneNote-Hauptfenster. Das einzelne Control auf der eingebauten
+Registerkarte **Einfügen** und die gleichnamigen Untermenüs in den Text-, Outline-,
+Freihand- und Lasso-Kontextmenüs sind native Office-`dynamicMenu`-Controls. Ihr
+Inhalt besteht direkt aus alphabetisch sortierten nativen Buttons, einer nativen
+Trennlinie und dem abschließenden Manage-Button. Jedes geöffnete Menü besitzt
+einen eigenen Snapshot; ein Refresh einer anderen Oberfläche macht seine zufälligen
+Item-IDs nicht ungültig. Save, Rename und Delete invalidieren alle Snapshots.
+Der synchrone `getContent`-Callback greift nur auf das lokale Repository zu und
+erzeugt kein OneNote-COM-Objekt. Erst `button.onAction` stellt den Insert
 nach Callback-Rückkehr auf den STA-Dispatcher und liest dort die aktuelle Seite
 mit `piBinaryDataSelection`.
 Der dabei erfasste `lastModifiedTime`-Wert verhindert, dass zwischenzeitliche
