@@ -4,8 +4,7 @@
     <tabs>
       <tab idMso="TabHome">
         <group id="sqGroup" label="Schnellbausteine">
-          <button id="sqInsert" label="Einfügen..." imageMso="QuickPartsInsertGallery" onAction="InsertSnippet" size="large"/>
-          <button id="sqManage" label="Verwalten..." imageMso="Organizer" onAction="ManageSnippets"/>
+          <button id="sqMain" label="Schnellbausteine" imageMso="QuickPartsInsertGallery" onAction="OpenSnippetMenu" size="large"/>
         </group>
       </tab>
     </tabs>

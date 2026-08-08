@@ -997,7 +997,9 @@ namespace Schnellbausteine.Tests
 
             string dialogs = File.ReadAllText(
                 Path.Combine(root, "src", "Schnellbausteine.AddIn", "Dialogs.cs"));
-            Assert(dialogs.Contains("\"Einfügen\""), "UI-Text Einfügen fehlt.");
+            Assert(
+                dialogs.Contains("\"Schnellbausteine verwalten\""),
+                "UI-Text Schnellbausteine verwalten fehlt.");
             Assert(dialogs.Contains("\"Löschen\""), "UI-Text Löschen fehlt.");
             Assert(dialogs.Contains("\"Schließen\""), "UI-Text Schließen fehlt.");
         }

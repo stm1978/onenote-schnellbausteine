@@ -50,9 +50,10 @@ Gespeicherte Schnellbausteine bleiben dabei erhalten.
 2. Im Text-Kontextmenü **Als Schnellbaustein speichern...** wählen und einen
    eindeutigen Namen eingeben. Bei Namenskonflikten wird explizit nachgefragt,
    ob überschrieben oder ein anderer Name verwendet werden soll.
-3. Im Register **Start** in der Gruppe **Schnellbausteine** auf
-   **Einfügen...** klicken und den alphabetisch sortierten Eintrag wählen.
-4. **Verwalten...** benennt Einträge um oder löscht sie nach Bestätigung.
+3. Im Register **Start** auf **Schnellbausteine** klicken und den gewünschten,
+   alphabetisch sortierten Eintrag im kompakten Menü wählen. Unter dem Trennstrich
+   öffnet **Schnellbausteine verwalten** die bestehende Verwaltung zum Umbenennen
+   oder Löschen nach Bestätigung.
 
 Beim Einfügen ersetzt ein Baustein markierten Text wie in Word. Reine
 Textfragmente werden direkt in den Lauf eingefügt. Blockinhalte (Listen,
@@ -63,6 +64,13 @@ Absatz eingefügt; der Spezialinhalt bleibt unverändert. Die Cursor- oder
 Auswahlmarkierung wird vor dem Öffnen des Auswahlfensters zusammen mit der
 Seiten-XML erfasst. Fehlt sie oder ist sie mehrdeutig, bricht das Add-in sichtbar
 ab, statt an einer geratenen Outline-Position einzufügen.
+
+Das Schnellbaustein-Menü lässt sich mit Pfeiltasten und Eingabetaste bedienen;
+Escape oder ein Klick außerhalb schließt es ohne Änderung. Da Office keine
+verlässlichen Koordinaten einzelner Ribbon-Schaltflächen bereitstellt, erscheint
+es stabil unterhalb des Ribbonbereichs an der oberen rechten Kante des
+OneNote-Fensters. Dafür werden weder UI Automation noch Bildschirminhalte
+ausgelesen.
 
 Ist der Ziel-Textcontainer schmaler als der gespeicherte Baustein, verbreitert das
 Add-in nur diesen Container auf die gespeicherte Mindestbreite. Breitere Container
@@ -172,9 +180,12 @@ pro Aktion erzeugt und explizit freigegeben; das von `OnConnection` gelieferte
 Application-Objekt wird nicht dauerhaft gehalten. Ribbon-Aktionen geben sofort
 an OneNote zurück. OneNote-COM-Aufrufe und WinForms-Dialoge laufen anschließend
 auf einem eigenen STA-Thread mit Windows-Message-Pump; Dialoge gehören dabei zum
-aktiven OneNote-Hauptfenster. Beim Einfügen wird die mit
-`piBinaryDataSelection` gelesene Seite vor dem Öffnen des Auswahlfensters
+aktiven OneNote-Hauptfenster. Der einzelne Ribbon-Button verwendet bewusst kein
+Office-`dynamicMenu`: Bei vorhandenen Bausteinen wird die mit
+`piBinaryDataSelection` gelesene Seite vor dem Öffnen des kompakten Menüs
 verankert und nach der Auswahl genau dieses unveränderte XML-Abbild aktualisiert.
+Die Verwaltung löst danach keinen weiteren Selection-Lesevorgang aus; im leeren
+Zustand öffnet sich das Menü vollständig ohne Selection-Snapshot.
 Der dabei erfasste `lastModifiedTime`-Wert verhindert, dass zwischenzeitliche
 Änderungen aus einem anderen Fenster oder durch Synchronisierung überschrieben
 werden; in diesem Fall bricht OneNote das Update sichtbar ab. Das aktualisierte

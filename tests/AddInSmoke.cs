@@ -46,6 +46,12 @@ namespace Schnellbausteine.Tests
                     "Schnellbausteine.AddIn.IOneNoteApplicationAdapter", true);
                 Type nameDialogType = assembly.GetType(
                     "Schnellbausteine.AddIn.NameDialog", true);
+                Type popupType = assembly.GetType(
+                    "Schnellbausteine.AddIn.SnippetMenuPopup", true);
+                Type popupInterfaceType = assembly.GetType(
+                    "Schnellbausteine.AddIn.ISnippetMenuPopup", true);
+                Type manageDialogType = assembly.GetType(
+                    "Schnellbausteine.AddIn.ManageDialog", true);
                 FieldInfo applicationField = clientType.GetField(
                     "application", BindingFlags.Instance | BindingFlags.NonPublic);
                 FieldInfo piaApplicationField = applicationAdapterType.GetField(
@@ -54,8 +60,8 @@ namespace Schnellbausteine.Tests
                     "dispatcher", BindingFlags.Instance | BindingFlags.NonPublic);
                 FieldInfo saveSelectionActionField = type.GetField(
                     "saveSelectionAction", BindingFlags.Instance | BindingFlags.NonPublic);
-                FieldInfo insertSnippetActionField = type.GetField(
-                    "insertSnippetAction", BindingFlags.Instance | BindingFlags.NonPublic);
+                FieldInfo openSnippetMenuActionField = type.GetField(
+                    "openSnippetMenuAction", BindingFlags.Instance | BindingFlags.NonPublic);
                 Type dispatcherType = assembly.GetType(
                     "Schnellbausteine.AddIn.StaDispatcher", true);
                 logType = assembly.GetType("Schnellbausteine.AddIn.Log", true);
@@ -64,10 +70,23 @@ namespace Schnellbausteine.Tests
                 MethodInfo selectionMethod = type.GetMethod(
                     "HasCurrentSelection", BindingFlags.Instance | BindingFlags.NonPublic);
                 MethodInfo saveSelectionMethod = type.GetMethod("SaveSelection");
+                MethodInfo openSnippetMenuMethod = type.GetMethod("OpenSnippetMenu");
+                MethodInfo openSnippetMenuCoreMethod = type.GetMethod(
+                    "OpenSnippetMenuCore",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                MethodInfo readCurrentPageMethod = clientType.GetMethod("ReadCurrentPage");
+                MethodInfo chooseMethod = popupInterfaceType.GetMethod("Choose");
+                MethodInfo popupDeactivateMethod = popupType.GetMethod(
+                    "OnDeactivate",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
                 ConstructorInfo[] forbiddenCallbackConstructors =
                     clientType.GetConstructors(
                         BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
                     .Concat(nameDialogType.GetConstructors(
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+                    .Concat(popupType.GetConstructors(
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+                    .Concat(manageDialogType.GetConstructors(
                         BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
                     .ToArray();
                 bool hasDynamicCallSites = assembly.GetTypes()
@@ -84,9 +103,9 @@ namespace Schnellbausteine.Tests
                 bool timeoutGuardWorks = VerifyCallbackTimeoutGuard();
                 bool saveCallbackHarnessWorks = VerifyDeferredCallback(
                     addIn, saveSelectionActionField, "SaveSelection");
-                object insertAddIn = Activator.CreateInstance(type);
-                bool insertCallbackHarnessWorks = VerifyDeferredCallback(
-                    insertAddIn, insertSnippetActionField, "InsertSnippet");
+                object menuAddIn = Activator.CreateInstance(type);
+                bool menuCallbackHarnessWorks = VerifyDeferredCallback(
+                    menuAddIn, openSnippetMenuActionField, "OpenSnippetMenu");
                 bool visibilityCallback = (bool)type.GetMethod("CanSaveSelection").Invoke(
                     addIn, new object[] { null });
                 string ribbonXml = (string)type.GetMethod("GetCustomUI").Invoke(
@@ -94,8 +113,11 @@ namespace Schnellbausteine.Tests
                 XNamespace ribbonNamespace =
                     "http://schemas.microsoft.com/office/2009/07/customui";
                 XDocument ribbon = XDocument.Parse(ribbonXml);
-                XElement insertButton = ribbon.Descendants(ribbonNamespace + "button")
-                    .SingleOrDefault(element => (string)element.Attribute("id") == "sqInsert");
+                XElement ribbonGroup = ribbon.Descendants(ribbonNamespace + "group")
+                    .SingleOrDefault(element => (string)element.Attribute("id") == "sqGroup");
+                XElement mainButton = ribbonGroup == null
+                    ? null
+                    : ribbonGroup.Elements(ribbonNamespace + "button").SingleOrDefault();
                 XElement contextMenus = ribbon.Root.Element(ribbonNamespace + "contextMenus");
                 XElement textMenu = contextMenus == null
                     ? null
@@ -106,9 +128,11 @@ namespace Schnellbausteine.Tests
                     : textMenu.Elements(ribbonNamespace + "button").SingleOrDefault(
                         element => (string)element.Attribute("id") == "sqSaveSelection");
 
-                if (insertButton == null ||
-                    (string)insertButton.Attribute("label") != "Einfügen..." ||
-                    (string)insertButton.Attribute("onAction") != "InsertSnippet" ||
+                if (mainButton == null ||
+                    ribbonGroup.Elements().Count() != 1 ||
+                    (string)mainButton.Attribute("id") != "sqMain" ||
+                    (string)mainButton.Attribute("label") != "Schnellbausteine" ||
+                    (string)mainButton.Attribute("onAction") != "OpenSnippetMenu" ||
                     ribbon.Descendants(ribbonNamespace + "dynamicMenu").Any() ||
                     saveButton == null ||
                     (string)saveButton.Attribute("label") != "Als Schnellbaustein speichern..." ||
@@ -126,23 +150,30 @@ namespace Schnellbausteine.Tests
                     dispatcherField.FieldType != dispatcherType ||
                     saveSelectionActionField == null ||
                     saveSelectionActionField.FieldType != typeof(Action<IntPtr>) ||
-                    insertSnippetActionField == null ||
-                    insertSnippetActionField.FieldType != typeof(Action<IntPtr>) ||
+                    openSnippetMenuActionField == null ||
+                    openSnippetMenuActionField.FieldType != typeof(Action<IntPtr>) ||
                     dispatcherType.GetMethod("Post") == null ||
                     dispatcherType.GetMethod("PostAfterCallback") == null ||
                     dispatcherType.GetMethod("Shutdown") == null ||
                     !dispatcherWorks ||
                     !timeoutGuardWorks ||
                     !saveCallbackHarnessWorks ||
-                    !insertCallbackHarnessWorks ||
+                    !menuCallbackHarnessWorks ||
                     dispatchMethod == null ||
                     !CallsMember(saveSelectionMethod, dispatchMethod) ||
                     forbiddenCallbackConstructors.Any(
                         constructor => CallsMember(saveSelectionMethod, constructor)) ||
                     forbiddenCallbackConstructors.Any(
-                        constructor => CallsMember(type.GetMethod("InsertSnippet"), constructor)) ||
-                    !CallsMethod(type.GetMethod("InsertSnippet"), dispatchMethod) ||
-                    !CallsMethod(type.GetMethod("ManageSnippets"), dispatchMethod) ||
+                        constructor => CallsMember(openSnippetMenuMethod, constructor)) ||
+                    !CallsMethod(openSnippetMenuMethod, dispatchMethod) ||
+                    !CallsBefore(
+                        openSnippetMenuCoreMethod,
+                        readCurrentPageMethod,
+                        chooseMethod) ||
+                    popupDeactivateMethod == null ||
+                    popupDeactivateMethod.DeclaringType != popupType ||
+                    type.GetMethod("InsertSnippet") != null ||
+                    type.GetMethod("ManageSnippets") != null ||
                     hasDynamicCallSites ||
                     referencesDynamicBinder ||
                     !visibilityCallback ||
@@ -203,6 +234,35 @@ namespace Schnellbausteine.Tests
         private static bool CallsMethod(MethodInfo caller, MethodInfo called)
         {
             return CallsMember(caller, called);
+        }
+
+        private static bool CallsBefore(
+            MethodInfo caller,
+            MethodBase first,
+            MethodBase second)
+        {
+            return FindMemberCall(caller, first) < FindMemberCall(caller, second) &&
+                FindMemberCall(caller, first) >= 0;
+        }
+
+        private static int FindMemberCall(MethodInfo caller, MethodBase called)
+        {
+            byte[] body = caller.GetMethodBody().GetILAsByteArray();
+            byte[] token = BitConverter.GetBytes(called.MetadataToken);
+            for (int index = 0; index <= body.Length - token.Length; index++)
+            {
+                bool match = true;
+                for (int offset = 0; offset < token.Length; offset++)
+                {
+                    if (body[index + offset] != token[offset])
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) return index;
+            }
+            return -1;
         }
 
         private static bool CallsMember(MethodInfo caller, MethodBase called)

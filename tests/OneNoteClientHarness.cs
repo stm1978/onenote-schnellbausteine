@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using System.Xml.Linq;
@@ -186,30 +187,6 @@ namespace Schnellbausteine.Tests
             }
         }
 
-        private sealed class FakePicker : IInsertSnippetPicker
-        {
-            private readonly List<string> calls;
-            private readonly bool accepted;
-
-            public FakePicker(List<string> calls, bool accepted)
-            {
-                this.calls = calls;
-                this.accepted = accepted;
-            }
-
-            public bool TrySelect(IWin32Window owner, out Snippet snippet)
-            {
-                calls.Add("picker.show");
-                snippet = accepted ? new Snippet { Id = "snippet-id", Name = "Test" } : null;
-                return accepted;
-            }
-
-            public void Dispose()
-            {
-                calls.Add("picker.dispose");
-            }
-        }
-
         private static int Main()
         {
             try
@@ -217,15 +194,16 @@ namespace Schnellbausteine.Tests
                 InsertNeverNavigatesAndActivationFollowsUpdate();
                 ActivationFailureDoesNotFailSuccessfulUpdate();
                 UpdateFailureDoesNotAttemptActivation();
-                PickerIsDisposedBeforeUpdateAndActivation();
+                MenuEntriesAreSortedAndSeparated();
                 ActivationFailureIsNonModalAndDoesNotFailInsert();
-                CancelledPickerDoesNotUpdate();
+                MenuChoiceDispatchesInsertManageAndCancel();
+                PopupPlacementIsStableAndClamped();
                 TargetAlreadyForegroundAcceptsSetForegroundFalse();
                 CurrentForegroundAndTargetThreadsAreAttached();
                 AttachedThreadsAreDetachedInFinally();
                 MinimizedTargetIsRestoredBeforeActivation();
                 RejectedActivationDoesNotFailInsert();
-                Console.WriteLine("11/11 OneNote-Client-Harness-Tests erfolgreich.");
+                Console.WriteLine("12/12 OneNote-Client-Harness-Tests erfolgreich.");
                 return 0;
             }
             catch (Exception exception)
@@ -242,17 +220,15 @@ namespace Schnellbausteine.Tests
             var activator = new FakeWindowActivator(calls);
             using (var client = CreateClient(application, activator))
             {
-                bool inserted = InsertSnippetOperation.Execute(
+                InsertSnippetOperation.Execute(
                     client,
                     Page(),
-                    new WindowHandleOwner(new IntPtr(123)),
-                    delegate { return new FakePicker(calls, true); },
+                    new Snippet { Id = "snippet-id", Name = "Test" },
                     delegate { return Fragment(); });
-                Equal(true, inserted);
             }
 
             Equal(
-                "picker.show,picker.dispose,update,activate:123",
+                "update,activate:123",
                 string.Join(",", calls));
             NoCallStartsWith(calls, "navigate:");
             NoCallStartsWith(calls, "read:");
@@ -290,25 +266,30 @@ namespace Schnellbausteine.Tests
             Equal("update", string.Join(",", calls));
         }
 
-        private static void PickerIsDisposedBeforeUpdateAndActivation()
+        private static void MenuEntriesAreSortedAndSeparated()
         {
-            var calls = new List<string>();
-            var application = new FakeApplication(calls);
-            using (var client = CreateClient(
-                application,
-                new FakeWindowActivator(calls)))
+            IList<SnippetMenuEntry> entries = SnippetMenuEntry.Create(new[]
             {
-                bool inserted = InsertSnippetOperation.Execute(
-                    client,
-                    Page(),
-                    new WindowHandleOwner(new IntPtr(123)),
-                    delegate { return new FakePicker(calls, true); },
-                    delegate { return Fragment(); });
-                Equal(true, inserted);
-            }
-            Equal(
-                "picker.show,picker.dispose,update,activate:123",
-                string.Join(",", calls));
+                new Snippet { Id = "z", Name = "Zulu" },
+                new Snippet { Id = "a", Name = "Alpha" }
+            });
+            Equal(4, entries.Count);
+            Equal("Alpha", entries[0].Text);
+            Equal("Zulu", entries[1].Text);
+            Equal(SnippetMenuEntryKind.Separator, entries[2].Kind);
+            Equal(SnippetMenuEntryKind.Manage, entries[3].Kind);
+            Equal("Schnellbausteine verwalten", entries[3].Text);
+
+            IList<SnippetMenuEntry> empty =
+                SnippetMenuEntry.Create(new Snippet[0]);
+            Equal(3, empty.Count);
+            Equal(SnippetMenuEntryKind.Empty, empty[0].Kind);
+            Equal(false, empty[0].Enabled);
+            Equal(SnippetMenuEntryKind.Separator, empty[1].Kind);
+            Equal("Schnellbausteine verwalten", empty[2].Text);
+            Equal(2, SnippetMenuEntry.FindEnabledIndex(empty, 1, 2));
+            Equal(3, SnippetMenuEntry.FindEnabledIndex(entries, 2, 1));
+            Equal(1, SnippetMenuEntry.FindEnabledIndex(entries, 2, 3));
         }
 
         private static void ActivationFailureIsNonModalAndDoesNotFailInsert()
@@ -321,37 +302,57 @@ namespace Schnellbausteine.Tests
             };
             using (var client = CreateClient(application, activator))
             {
-                bool inserted = InsertSnippetOperation.Execute(
+                InsertSnippetOperation.Execute(
                     client,
                     Page(),
-                    new WindowHandleOwner(new IntPtr(123)),
-                    delegate { return new FakePicker(calls, true); },
+                    new Snippet { Id = "snippet-id", Name = "Test" },
                     delegate { return Fragment(); });
-                Equal(true, inserted);
             }
             Equal(
-                "picker.show,picker.dispose,update,activate:123",
+                "update,activate:123",
                 string.Join(",", calls));
             NoCallStartsWith(calls, "navigate:");
         }
 
-        private static void CancelledPickerDoesNotUpdate()
+        private static void MenuChoiceDispatchesInsertManageAndCancel()
         {
             var calls = new List<string>();
-            var application = new FakeApplication(calls);
-            using (var client = CreateClient(
-                application,
-                new FakeWindowActivator(calls)))
+            var snippet = new Snippet { Id = "snippet-id", Name = "Test" };
+            Action<Snippet> insert = delegate(Snippet selected)
             {
-                bool inserted = InsertSnippetOperation.Execute(
-                    client,
-                    Page(),
-                    new WindowHandleOwner(new IntPtr(123)),
-                    delegate { return new FakePicker(calls, false); },
-                    delegate { throw new Exception("Fragment darf nicht geladen werden."); });
-                Equal(false, inserted);
-            }
-            Equal("picker.show,picker.dispose", string.Join(",", calls));
+                calls.Add("insert:" + selected.Id);
+            };
+            Action manage = delegate { calls.Add("manage"); };
+
+            SnippetMenuChoiceDispatcher.Execute(
+                SnippetMenuChoice.Insert(snippet),
+                insert,
+                manage);
+            SnippetMenuChoiceDispatcher.Execute(
+                SnippetMenuChoice.Manage(),
+                insert,
+                manage);
+            SnippetMenuChoiceDispatcher.Execute(
+                SnippetMenuChoice.Cancel(),
+                insert,
+                manage);
+
+            Equal("insert:snippet-id,manage", string.Join(",", calls));
+        }
+
+        private static void PopupPlacementIsStableAndClamped()
+        {
+            Point position = SnippetPopupPlacement.Calculate(
+                new Rectangle(100, 50, 1000, 700),
+                new Rectangle(0, 0, 1920, 1080),
+                new Size(310, 300));
+            Equal(new Point(772, 162), position);
+
+            Point clamped = SnippetPopupPlacement.Calculate(
+                new Rectangle(1800, 1000, 200, 100),
+                new Rectangle(0, 0, 1920, 1080),
+                new Size(310, 300));
+            Equal(new Point(1610, 780), clamped);
         }
 
         private static void TargetAlreadyForegroundAcceptsSetForegroundFalse()
@@ -445,13 +446,11 @@ namespace Schnellbausteine.Tests
                 new DateTime(2026, 8, 8, 10, 0, 0, DateTimeKind.Utc),
                 new OneNoteWindowActivator(native)))
             {
-                bool inserted = InsertSnippetOperation.Execute(
+                InsertSnippetOperation.Execute(
                     client,
                     Page(),
-                    new WindowHandleOwner(new IntPtr(100)),
-                    delegate { return new FakePicker(calls, true); },
+                    new Snippet { Id = "snippet-id", Name = "Test" },
                     delegate { return Fragment(); });
-                Equal(true, inserted);
             }
             Contains(calls, "set:100");
             Contains(calls, "bring:100");
