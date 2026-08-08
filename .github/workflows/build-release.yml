@@ -1,0 +1,135 @@
+name: Build and release
+
+on:
+  push:
+    branches:
+      - main
+      - stm1978-schnellbausteine-mvp
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Prepare official Microsoft Office PIAs
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $url = "https://download.microsoft.com/download/c/1/d/c1d6dbbb-700d-4669-98cf-820ac3ae8e55/PIARedist.exe"
+          $redist = Join-Path $env:RUNNER_TEMP "PIARedist.exe"
+          Invoke-WebRequest $url -OutFile $redist
+          $expected = "F1D04AAE514D9734231B05860DFBB644E8DA61C4E1F2A7F5B3E41D2FCA2FAEA9"
+          $actual = (Get-FileHash $redist -Algorithm SHA256).Hash
+          if ($actual -ne $expected) {
+            throw "Office PIA checksum mismatch: $actual"
+          }
+
+          $package = Join-Path $env:RUNNER_TEMP "office-pia-package"
+          New-Item -ItemType Directory -Force $package | Out-Null
+          $process = Start-Process $redist -ArgumentList "/quiet","/extract:$package" -Wait -PassThru
+          if ($process.ExitCode -ne 0 -or -not (Test-Path "$package\o2010pia.msi")) {
+            throw "Office PIA extraction failed with exit code $($process.ExitCode)."
+          }
+
+          $lessMsiUrl = "https://github.com/activescott/lessmsi/releases/download/v2.12.9/lessmsi-v2.12.9.zip"
+          $lessMsiZip = Join-Path $env:RUNNER_TEMP "lessmsi-v2.12.9.zip"
+          Invoke-WebRequest $lessMsiUrl -OutFile $lessMsiZip
+          $lessMsiExpected = "5B4E187E74B184AD3A63CCF06C3D17DAE2B8C4B6C298A996DBD51A9F6DB29D21"
+          $lessMsiActual = (Get-FileHash $lessMsiZip -Algorithm SHA256).Hash
+          if ($lessMsiActual -ne $lessMsiExpected) {
+            throw "lessmsi checksum mismatch: $lessMsiActual"
+          }
+
+          $lessMsi = Join-Path $env:RUNNER_TEMP "lessmsi"
+          Expand-Archive $lessMsiZip $lessMsi
+          $piaFiles = Join-Path $env:RUNNER_TEMP "office-pia-files"
+          New-Item -ItemType Directory -Force $piaFiles | Out-Null
+          & "$lessMsi\lessmsi.exe" x "$package\o2010pia.msi" "$piaFiles\"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $oneNote = Get-ChildItem $piaFiles -Recurse -Filter "Microsoft.Office.Interop.OneNote.dll" |
+            Where-Object { [Reflection.AssemblyName]::GetAssemblyName($_.FullName).Version.Major -eq 14 } |
+            Select-Object -First 1 -ExpandProperty FullName
+          $office = Get-ChildItem $piaFiles -Recurse -Filter "OFFICE.DLL" |
+            Where-Object { [Reflection.AssemblyName]::GetAssemblyName($_.FullName).Version.Major -eq 14 } |
+            Select-Object -First 1 -ExpandProperty FullName
+          $extensibility = Get-ChildItem $piaFiles -Recurse -Filter "extensibility.dll" |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $oneNote -or -not $office -or -not $extensibility) {
+            throw "Required Office PIAs were not extracted."
+          }
+          "ONENOTE_PIA_PATH=$oneNote" | Out-File $env:GITHUB_ENV -Append
+          "OFFICE_PIA_PATH=$office" | Out-File $env:GITHUB_ENV -Append
+          "EXTENSIBILITY_PIA_PATH=$extensibility" | Out-File $env:GITHUB_ENV -Append
+
+      - name: Build and test x86
+        shell: powershell
+        run: .\test.ps1 -Configuration Release -Platform x86
+
+      - name: Build and test x64
+        shell: powershell
+        run: .\test.ps1 -Configuration Release -Platform x64
+
+      - name: Determine version
+        id: version
+        shell: powershell
+        run: |
+          $version = if ("${{ github.ref_type }}" -eq "tag") {
+            "${{ github.ref_name }}".TrimStart("v")
+          } else {
+            "0.1.0-ci.${{ github.run_number }}"
+          }
+          "value=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Build Setup
+        shell: powershell
+        run: .\installer\Build-Setup.ps1 -Version "${{ steps.version.outputs.value }}" -SkipBuild
+
+      - name: Test x86 Setup lifecycle
+        shell: powershell
+        run: .\installer\Test-Setup.ps1 -SetupPath "artifacts\setup\Schnellbausteine-Setup-${{ steps.version.outputs.value }}.exe" -Platform x86 -SkipHostActivation
+
+      - name: Test x64 Setup lifecycle
+        shell: powershell
+        run: .\installer\Test-Setup.ps1 -SetupPath "artifacts\setup\Schnellbausteine-Setup-${{ steps.version.outputs.value }}.exe" -Platform x64 -SkipHostActivation
+
+      - name: Upload Setup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Schnellbausteine-Setup-${{ steps.version.outputs.value }}
+          path: artifacts/setup/Schnellbausteine-Setup-${{ steps.version.outputs.value }}.exe
+          if-no-files-found: error
+
+      - name: Create or update GitHub Release
+        if: github.ref_type == 'tag'
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $asset = "artifacts\setup\Schnellbausteine-Setup-${{ steps.version.outputs.value }}.exe"
+          $release = gh release list --limit 100 --json tagName | ConvertFrom-Json |
+            Where-Object tagName -eq "${{ github.ref_name }}"
+          if ($release) {
+            gh release upload "${{ github.ref_name }}" $asset --clobber
+          } else {
+            $arguments = @(
+              "release", "create", "${{ github.ref_name }}", $asset,
+              "--title", "Schnellbausteine ${{ github.ref_name }}",
+              "--generate-notes"
+            )
+            if ("${{ github.ref_name }}" -match "-(preview|beta|rc)") {
+              $arguments += "--prerelease"
+            }
+            & gh @arguments
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
