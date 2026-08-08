@@ -34,6 +34,8 @@ namespace Schnellbausteine.Tests
                     "application", BindingFlags.Instance | BindingFlags.NonPublic);
                 FieldInfo dispatcherField = type.GetField(
                     "dispatcher", BindingFlags.Instance | BindingFlags.NonPublic);
+                FieldInfo saveSelectionActionField = type.GetField(
+                    "saveSelectionAction", BindingFlags.Instance | BindingFlags.NonPublic);
                 Type dispatcherType = assembly.GetType(
                     "Schnellbausteine.AddIn.StaDispatcher", true);
                 MethodInfo dispatchMethod = type.GetMethod(
@@ -51,7 +53,8 @@ namespace Schnellbausteine.Tests
                 object addIn = Activator.CreateInstance(type);
                 bool dispatcherWorks = VerifyDispatcher(
                     Activator.CreateInstance(dispatcherType), dispatcherType);
-                bool callbackHarnessWorks = VerifyCallbackDispatch(addIn, dispatchMethod);
+                bool callbackHarnessWorks = VerifySaveSelectionCallback(
+                    addIn, saveSelectionActionField);
                 bool visibilityCallback = (bool)type.GetMethod("CanSaveSelection").Invoke(
                     addIn, new object[] { null });
                 string ribbonXml = (string)type.GetMethod("GetCustomUI").Invoke(
@@ -86,6 +89,8 @@ namespace Schnellbausteine.Tests
                         "Microsoft.Office.Interop.OneNote.IApplication" ||
                     dispatcherField == null ||
                     dispatcherField.FieldType != dispatcherType ||
+                    saveSelectionActionField == null ||
+                    saveSelectionActionField.FieldType != typeof(Action<IntPtr>) ||
                     dispatcherType.GetMethod("Post") == null ||
                     dispatcherType.GetMethod("PostAfterCallback") == null ||
                     dispatcherType.GetMethod("Shutdown") == null ||
@@ -205,38 +210,36 @@ namespace Schnellbausteine.Tests
             return result && shutdown;
         }
 
-        private static bool VerifyCallbackDispatch(object addIn, MethodInfo dispatchMethod)
+        private static bool VerifySaveSelectionCallback(
+            object addIn, FieldInfo saveSelectionActionField)
         {
-            var callbackBodyCompleted = new TaskCompletionSource<object>();
             var actionCompleted = new ManualResetEvent(false);
             ApartmentState apartment = ApartmentState.Unknown;
             int callingThreadId = Thread.CurrentThread.ManagedThreadId;
             int dispatchedThreadId = callingThreadId;
+            bool callbackReturned = false;
+            bool actionStartedBeforeReturn = false;
             bool result = false;
             bool shutdown = false;
             try
             {
-                dispatchMethod.Invoke(addIn, new object[]
+                saveSelectionActionField.SetValue(addIn, new Action<IntPtr>(delegate
                 {
-                    "Harness",
-                    callbackBodyCompleted.Task,
-                    "Harness error",
-                    new Action<IntPtr>(delegate
-                    {
-                        apartment = Thread.CurrentThread.GetApartmentState();
-                        dispatchedThreadId = Thread.CurrentThread.ManagedThreadId;
-                        actionCompleted.Set();
-                    })
-                });
-                if (actionCompleted.WaitOne(TimeSpan.FromMilliseconds(150))) return false;
-                callbackBodyCompleted.SetResult(null);
+                    actionStartedBeforeReturn = !Volatile.Read(ref callbackReturned);
+                    apartment = Thread.CurrentThread.GetApartmentState();
+                    dispatchedThreadId = Thread.CurrentThread.ManagedThreadId;
+                    actionCompleted.Set();
+                }));
+                addIn.GetType().GetMethod("SaveSelection").Invoke(
+                    addIn, new object[] { null });
+                Volatile.Write(ref callbackReturned, true);
                 result = actionCompleted.WaitOne(TimeSpan.FromSeconds(5)) &&
+                    !actionStartedBeforeReturn &&
                     apartment == ApartmentState.STA &&
                     dispatchedThreadId != callingThreadId;
             }
             finally
             {
-                callbackBodyCompleted.TrySetResult(null);
                 actionCompleted.Dispose();
                 FieldInfo dispatcherField = addIn.GetType().GetField(
                     "dispatcher", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -261,13 +264,15 @@ namespace Schnellbausteine.Tests
                 "operation=dispatcher phase=action.after",
                 "operation=dispatcher phase=thread.exit",
                 "operation=dispatcher phase=shutdown.complete",
-                "operation=dispatch.Harness phase=entry",
-                "operation=dispatch.Harness phase=action.entry",
-                "operation=dispatch.Harness phase=action.exit"
+                "operation=callback.SaveSelection phase=entry",
+                "operation=callback.SaveSelection phase=exit",
+                "operation=dispatch.SaveSelection phase=entry",
+                "operation=dispatch.SaveSelection phase=action.entry",
+                "operation=dispatch.SaveSelection phase=action.exit"
             };
             string harnessAction = log.Split(new[] { Environment.NewLine },
                 StringSplitOptions.RemoveEmptyEntries).SingleOrDefault(
-                    line => line.Contains("operation=dispatch.Harness phase=action.entry"));
+                    line => line.Contains("operation=dispatch.SaveSelection phase=action.entry"));
             return required.All(log.Contains) &&
                 harnessAction != null &&
                 harnessAction.Contains("apartment=STA");

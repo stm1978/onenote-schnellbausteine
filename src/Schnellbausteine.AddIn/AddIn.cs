@@ -23,8 +23,14 @@ namespace Schnellbausteine.AddIn
     {
         private readonly SnippetRepository repository = new SnippetRepository(SnippetRepository.DefaultRoot);
         private readonly StaDispatcher dispatcher = new StaDispatcher();
+        private Action<IntPtr> saveSelectionAction;
         private IRibbonUI ribbon;
         private int operationActive;
+
+        public AddIn()
+        {
+            saveSelectionAction = SaveSelectionCore;
+        }
 
         public void OnConnection(object application, ext_ConnectMode connectMode, object addInInstance, ref Array custom)
         {
@@ -117,7 +123,7 @@ namespace Schnellbausteine.AddIn
                     "SaveSelection",
                     callbackBodyCompleted.Task,
                     "Der Schnellbaustein konnte nicht gespeichert werden.",
-                    SaveSelectionCore);
+                    saveSelectionAction);
             }
             finally
             {
