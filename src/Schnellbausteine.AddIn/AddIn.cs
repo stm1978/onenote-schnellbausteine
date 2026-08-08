@@ -7,6 +7,7 @@ using System.Security;
 using System.Text;
 using System.Windows.Forms;
 using System.Xml.Linq;
+using Extensibility;
 using Microsoft.Office.Core;
 using Schnellbausteine.Core;
 

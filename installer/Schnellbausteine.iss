@@ -78,12 +78,19 @@ Root: HKCU64; Subkey: "Software\Classes\{#AddInProgId}"; Flags: deletekey; Check
 Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}"; ValueType: string; ValueData: "Schnellbausteine für OneNote"; Flags: uninsdeletekey; Check: InstallX86
 Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}"; ValueType: string; ValueName: "AppID"; ValueData: "{#AddInClsid}"; Check: InstallX86
 Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}\ProgID"; ValueType: string; ValueData: "{#AddInProgId}"; Check: InstallX86
+Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}\VersionIndependentProgID"; ValueType: string; ValueData: "{#AddInProgId}"; Check: InstallX86
+Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}\Programmable"; ValueType: string; ValueData: ""; Check: InstallX86
+Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}\Implemented Categories\{{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}"; ValueType: string; ValueData: ""; Check: InstallX86
 Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32"; ValueType: string; ValueData: "mscoree.dll"; Check: InstallX86
 Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32"; ValueType: string; ValueName: "ThreadingModel"; ValueData: "Both"; Check: InstallX86
 Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32"; ValueType: string; ValueName: "Class"; ValueData: "Schnellbausteine.AddIn.AddIn"; Check: InstallX86
 Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32"; ValueType: string; ValueName: "Assembly"; ValueData: "{#AddInAssembly}"; Check: InstallX86
 Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32"; ValueType: string; ValueName: "RuntimeVersion"; ValueData: "v4.0.30319"; Check: InstallX86
 Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32"; ValueType: string; ValueName: "CodeBase"; ValueData: "{code:GetCodeBase|x86}"; Check: InstallX86
+Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32\1.0.0.0"; ValueType: string; ValueName: "Class"; ValueData: "Schnellbausteine.AddIn.AddIn"; Check: InstallX86
+Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32\1.0.0.0"; ValueType: string; ValueName: "Assembly"; ValueData: "{#AddInAssembly}"; Check: InstallX86
+Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32\1.0.0.0"; ValueType: string; ValueName: "RuntimeVersion"; ValueData: "v4.0.30319"; Check: InstallX86
+Root: HKCU32; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32\1.0.0.0"; ValueType: string; ValueName: "CodeBase"; ValueData: "{code:GetCodeBase|x86}"; Check: InstallX86
 Root: HKCU32; Subkey: "Software\Classes\{#AddInProgId}"; ValueType: string; ValueData: "Schnellbausteine für OneNote"; Flags: uninsdeletekey; Check: InstallX86
 Root: HKCU32; Subkey: "Software\Classes\{#AddInProgId}\CLSID"; ValueType: string; ValueData: "{#AddInClsid}"; Check: InstallX86
 Root: HKCU32; Subkey: "Software\Classes\AppID\{#AddInClsid}"; ValueType: string; ValueData: "Schnellbausteine für OneNote"; Flags: uninsdeletekey; Check: InstallX86
@@ -96,12 +103,19 @@ Root: HKCU32; Subkey: "Software\Microsoft\Office\OneNote\AddIns\{#AddInProgId}";
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}"; ValueType: string; ValueData: "Schnellbausteine für OneNote"; Flags: uninsdeletekey; Check: InstallX64
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}"; ValueType: string; ValueName: "AppID"; ValueData: "{#AddInClsid}"; Check: InstallX64
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\ProgID"; ValueType: string; ValueData: "{#AddInProgId}"; Check: InstallX64
+Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\VersionIndependentProgID"; ValueType: string; ValueData: "{#AddInProgId}"; Check: InstallX64
+Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\Programmable"; ValueType: string; ValueData: ""; Check: InstallX64
+Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\Implemented Categories\{{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}"; ValueType: string; ValueData: ""; Check: InstallX64
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32"; ValueType: string; ValueData: "mscoree.dll"; Check: InstallX64
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32"; ValueType: string; ValueName: "ThreadingModel"; ValueData: "Both"; Check: InstallX64
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32"; ValueType: string; ValueName: "Class"; ValueData: "Schnellbausteine.AddIn.AddIn"; Check: InstallX64
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32"; ValueType: string; ValueName: "Assembly"; ValueData: "{#AddInAssembly}"; Check: InstallX64
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32"; ValueType: string; ValueName: "RuntimeVersion"; ValueData: "v4.0.30319"; Check: InstallX64
 Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32"; ValueType: string; ValueName: "CodeBase"; ValueData: "{code:GetCodeBase|x64}"; Check: InstallX64
+Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32\1.0.0.0"; ValueType: string; ValueName: "Class"; ValueData: "Schnellbausteine.AddIn.AddIn"; Check: InstallX64
+Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32\1.0.0.0"; ValueType: string; ValueName: "Assembly"; ValueData: "{#AddInAssembly}"; Check: InstallX64
+Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32\1.0.0.0"; ValueType: string; ValueName: "RuntimeVersion"; ValueData: "v4.0.30319"; Check: InstallX64
+Root: HKCU64; Subkey: "Software\Classes\CLSID\{#AddInClsid}\InprocServer32\1.0.0.0"; ValueType: string; ValueName: "CodeBase"; ValueData: "{code:GetCodeBase|x64}"; Check: InstallX64
 Root: HKCU64; Subkey: "Software\Classes\{#AddInProgId}"; ValueType: string; ValueData: "Schnellbausteine für OneNote"; Flags: uninsdeletekey; Check: InstallX64
 Root: HKCU64; Subkey: "Software\Classes\{#AddInProgId}\CLSID"; ValueType: string; ValueData: "{#AddInClsid}"; Check: InstallX64
 Root: HKCU64; Subkey: "Software\Classes\AppID\{#AddInClsid}"; ValueType: string; ValueData: "Schnellbausteine für OneNote"; Flags: uninsdeletekey; Check: InstallX64

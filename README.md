@@ -10,11 +10,21 @@ sich an den öffentlich dokumentierten Mustern von
 [OneMore](https://github.com/stevencohn/OneMore) (MPL-2.0), enthält aber keinen
 kopierten OneMore-Quellcode.
 
+> [!CAUTION]
+> **`v0.1.0-preview.1` ist zurückgezogen und darf nicht installiert werden.**
+> Diese Version konnte OneNote beim Start blockieren. Falls sie noch installiert
+> ist, OneNote schließen und das datenbewahrende
+> [`Recover-Schnellbausteine.ps1`](installer/Recover-Schnellbausteine.ps1)
+> ausführen oder die App nach einem Windows-Neustart normal deinstallieren.
+> Gespeicherte Bausteine unter `%LOCALAPPDATA%\Schnellbausteine\Data` werden
+> dabei nicht gelöscht.
+
 ## Installation für Endnutzer
 
 1. Auf der
    [Release-Seite](https://github.com/stm1978/onenote-schnellbausteine/releases)
-   die neueste Datei **`Schnellbausteine-Setup-....exe`** herunterladen.
+   die neueste, nicht zurückgezogene Datei
+   **`Schnellbausteine-Setup-....exe`** herunterladen.
 2. OneNote vollständig schließen.
 3. Die heruntergeladene Setup-Datei doppelklicken und **Installieren** wählen.
 4. OneNote neu starten.
@@ -107,14 +117,19 @@ OneNote installierten Office-PIAs benötigt.
 .\test.ps1 -Configuration Release -Platform x86
 .\test.ps1 -Configuration Release -Platform x64
 .\installer\Build-Setup.ps1 -Version 0.1.0
+.\tests\Test-OneNoteStartup.ps1 `
+    -SetupPath .\artifacts\setup\Schnellbausteine-Setup-0.1.0.exe
 ```
 
 Die Build-Ausgaben liegen unter `artifacts\<Plattform>\<Konfiguration>`, Setup
 unter `artifacts\setup`. `Build-Setup.ps1` lädt den offiziell veröffentlichten,
 per SHA-256 fixierten Inno-Setup-Compiler 7.0.2 und baut reproduzierbar beide
 Bitnesses in eine EXE. Die GitHub-Actions-Pipeline führt beide Testsuiten sowie
-stille Installations-, Upgrade-, COM- und Deinstallationstests aus. Bei einem
-Tag `v*` wird Setup automatisch an ein GitHub Release angehängt.
+stille Installations-, Upgrade-, COM-Surrogate-Lifecycle- und
+Deinstallationstests aus. Bei einem Tag `v*` wird Setup automatisch an ein
+GitHub Release angehängt. `Test-OneNoteStartup.ps1` ist der zusätzliche lokale
+Regressionstest mit einem tatsächlich installierten OneNote Desktop; OneNote
+muss davor vollständig geschlossen sein.
 
 Die PowerShell-Skripte bleiben als Entwickler-Fallback verfügbar:
 

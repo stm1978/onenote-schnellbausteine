@@ -21,7 +21,9 @@ $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive
 $clsid = "{CCF3B64A-9580-4D44-BDCE-49BFE95AC510}"
 $progId = "Schnellbausteine.OneNoteAddIn"
 $assemblyPath = Join-Path $target "Schnellbausteine.AddIn.dll"
-$assemblyName = [Reflection.AssemblyName]::GetAssemblyName($assemblyPath).FullName
+$assembly = [Reflection.AssemblyName]::GetAssemblyName($assemblyPath)
+$assemblyName = $assembly.FullName
+$assemblyVersion = $assembly.Version.ToString()
 $codeBase = ([Uri]$assemblyPath).AbsoluteUri
 
 try {
@@ -29,6 +31,10 @@ try {
     $class.SetValue("", "Schnellbausteine fur OneNote")
     $class.SetValue("AppID", $clsid)
     $class.CreateSubKey("ProgID").SetValue("", $progId)
+    $class.CreateSubKey("VersionIndependentProgID").SetValue("", $progId)
+    $class.CreateSubKey("Programmable").SetValue("", "")
+    $class.CreateSubKey(
+        "Implemented Categories\{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}").Close()
     $server = $class.CreateSubKey("InprocServer32")
     $server.SetValue("", "mscoree.dll")
     $server.SetValue("ThreadingModel", "Both")
@@ -36,6 +42,12 @@ try {
     $server.SetValue("Assembly", $assemblyName)
     $server.SetValue("RuntimeVersion", "v4.0.30319")
     $server.SetValue("CodeBase", $codeBase)
+    $versionedServer = $server.CreateSubKey($assemblyVersion)
+    $versionedServer.SetValue("Class", "Schnellbausteine.AddIn.AddIn")
+    $versionedServer.SetValue("Assembly", $assemblyName)
+    $versionedServer.SetValue("RuntimeVersion", "v4.0.30319")
+    $versionedServer.SetValue("CodeBase", $codeBase)
+    $versionedServer.Close()
     $server.Close()
     $class.Close()
 

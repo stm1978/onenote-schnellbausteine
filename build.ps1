@@ -38,6 +38,17 @@ $office = if ($env:OFFICE_PIA_PATH -and (Test-Path $env:OFFICE_PIA_PATH)) {
 } else {
     Find-GacAssembly "office" @("15", "14")
 }
+$extensibility = if ($env:EXTENSIBILITY_PIA_PATH -and (Test-Path $env:EXTENSIBILITY_PIA_PATH)) {
+    $env:EXTENSIBILITY_PIA_PATH
+} else {
+    @(
+        (Join-Path ${env:ProgramFiles(x86)} "Common Files\Microsoft Shared\MSEnv\PublicAssemblies\extensibility.dll"),
+        (Join-Path $env:ProgramFiles "Common Files\Microsoft Shared\MSEnv\PublicAssemblies\extensibility.dll")
+    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+if (-not $extensibility) {
+    throw "Extensibility PIA wurde nicht gefunden. Installieren Sie das offizielle Microsoft Office PIA Redistributable."
+}
 
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $common = @("/nologo", "/warnaserror+", "/langversion:5", "/optimize+", "/debug:pdbonly")
@@ -48,11 +59,15 @@ $coreSources = Get-ChildItem "$root\src\Schnellbausteine.Core" -Recurse -Filter 
 if ($LASTEXITCODE -ne 0) { throw "Core-Kompilierung fehlgeschlagen." }
 
 $addinSources = Get-ChildItem "$root\src\Schnellbausteine.AddIn" -Recurse -Filter *.cs | ForEach-Object FullName
-& $csc @common /target:library /platform:$Platform /out:"$output\Schnellbausteine.AddIn.dll" /r:"$output\Schnellbausteine.Core.dll" /r:System.Xml.Linq.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:Microsoft.CSharp.dll /link:"$oneNote" /link:"$office" /resource:"$root\src\Schnellbausteine.AddIn\Ribbon.xml,Schnellbausteine.AddIn.Ribbon.xml" $addinSources
+& $csc @common /target:library /platform:$Platform /out:"$output\Schnellbausteine.AddIn.dll" /r:"$output\Schnellbausteine.Core.dll" /r:System.Xml.Linq.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:Microsoft.CSharp.dll /link:"$oneNote" /link:"$office" /link:"$extensibility" /resource:"$root\src\Schnellbausteine.AddIn\Ribbon.xml,Schnellbausteine.AddIn.Ribbon.xml" $addinSources
 if ($LASTEXITCODE -ne 0) { throw "Add-in-Kompilierung fehlgeschlagen." }
 
 $testSources = Get-ChildItem "$root\tests\Schnellbausteine.Tests" -Recurse -Filter *.cs | ForEach-Object FullName
 & $csc @common /target:exe /platform:anycpu /out:"$output\Schnellbausteine.Tests.exe" /r:"$output\Schnellbausteine.Core.dll" /r:System.Xml.Linq.dll $testSources
 if ($LASTEXITCODE -ne 0) { throw "Test-Kompilierung fehlgeschlagen." }
+
+$surrogateSource = Join-Path $root "tests\SurrogateSmoke.cs"
+& $csc @common /target:exe /platform:$Platform /out:"$output\Schnellbausteine.SurrogateSmoke.exe" /link:"$extensibility" $surrogateSource
+if ($LASTEXITCODE -ne 0) { throw "Surrogate-Test-Kompilierung fehlgeschlagen." }
 
 Write-Host "Build erfolgreich: $output"

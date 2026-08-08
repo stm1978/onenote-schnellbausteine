@@ -7,6 +7,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 $setup = (Resolve-Path $SetupPath).Path
+$addInAppId = "CCF3B64A-9580-4D44-BDCE-49BFE95AC510"
+
+function Get-AddInSurrogate {
+    @(Get-CimInstance Win32_Process -Filter "Name='dllhost.exe'" |
+        Where-Object { $_.CommandLine -match $addInAppId })
+}
+
 $appRoot = Join-Path $env:LOCALAPPDATA "Schnellbausteine\AddIn"
 $dataRoot = Join-Path $env:LOCALAPPDATA "Schnellbausteine\Data"
 $registryView = if ($Platform -eq "x86") {
@@ -18,6 +25,14 @@ $cscript = if ($Platform -eq "x86") {
     "$env:WINDIR\SysWOW64\cscript.exe"
 } else {
     "$env:WINDIR\System32\cscript.exe"
+}
+$surrogateSmoke = Join-Path $PSScriptRoot (
+    "..\artifacts\$Platform\Release\Schnellbausteine.SurrogateSmoke.exe")
+if (-not (Test-Path $surrogateSmoke)) {
+    throw "Surrogate-Lifecycle-Test fehlt: $surrogateSmoke"
+}
+if ((Get-AddInSurrogate).Count -ne 0) {
+    throw "Ein alter Schnellbausteine-COM-Surrogatprozess lauft noch."
 }
 
 New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
@@ -53,6 +68,26 @@ try {
         if ($codeBase -notmatch "/$Platform/Schnellbausteine\.AddIn\.dll$") {
             throw "CodeBase verweist auf die falsche Bitness: $codeBase"
         }
+
+        $managedCategory = $base.OpenSubKey(
+            "Software\Classes\CLSID\{CCF3B64A-9580-4D44-BDCE-49BFE95AC510}" +
+            "\Implemented Categories\{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}")
+        if (-not $managedCategory) { throw "Managed-COM-Kategorie fehlt." }
+        $managedCategory.Close()
+
+        $versionedServer = $base.OpenSubKey(
+            "Software\Classes\CLSID\{CCF3B64A-9580-4D44-BDCE-49BFE95AC510}" +
+            "\InprocServer32\1.0.0.0")
+        if (-not $versionedServer) { throw "Versionierte COM-Registrierung fehlt." }
+        $versionedServer.Close()
+
+        $appId = $base.OpenSubKey(
+            "Software\Classes\AppID\{CCF3B64A-9580-4D44-BDCE-49BFE95AC510}")
+        if (-not $appId) { throw "COM-AppID-Registrierung fehlt." }
+        if ($null -eq $appId.GetValue("DllSurrogate")) {
+            throw "DllSurrogate-Registrierung fehlt."
+        }
+        $appId.Close()
     }
     finally {
         $base.Close()
@@ -60,6 +95,18 @@ try {
 
     & $cscript //nologo "$PSScriptRoot\..\tests\ComSmoke.vbs"
     if ($LASTEXITCODE -ne 0) { throw "COM-/Ribbon-Smoke-Test fehlgeschlagen." }
+
+    & $surrogateSmoke
+    if ($LASTEXITCODE -ne 0) {
+        throw "COM-Surrogate-Lifecycle-Test fehlgeschlagen."
+    }
+
+    for ($second = 1; $second -le 15 -and (Get-AddInSurrogate).Count -ne 0; $second++) {
+        Start-Sleep -Seconds 1
+    }
+    if ((Get-AddInSurrogate).Count -ne 0) {
+        throw "Der COM-Surrogatprozess wurde nach dem Lifecycle-Test nicht beendet."
+    }
 
     $upgrade = Start-Process $setup -ArgumentList @(
         "/VERYSILENT",
