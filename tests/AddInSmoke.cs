@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -20,6 +21,9 @@ namespace Schnellbausteine.Tests
                 return 1;
             }
 
+            string diagnosticLog =
+                "Schnellbausteine-Smoke-" + Guid.NewGuid().ToString("N") + ".log";
+            Environment.SetEnvironmentVariable("SCHNELLBAUSTEINE_LOG_PATH", diagnosticLog);
             try
             {
                 Assembly assembly = Assembly.LoadFrom(args[0]);
@@ -46,7 +50,8 @@ namespace Schnellbausteine.Tests
                     .Any(reference => reference.Name == "Microsoft.CSharp");
                 object addIn = Activator.CreateInstance(type);
                 bool dispatcherWorks = VerifyDispatcher(
-                    dispatcherField.GetValue(addIn), dispatcherType);
+                    Activator.CreateInstance(dispatcherType), dispatcherType);
+                bool callbackHarnessWorks = VerifyCallbackDispatch(addIn, dispatchMethod);
                 bool visibilityCallback = (bool)type.GetMethod("CanSaveSelection").Invoke(
                     addIn, new object[] { null });
                 string ribbonXml = (string)type.GetMethod("GetCustomUI").Invoke(
@@ -85,6 +90,7 @@ namespace Schnellbausteine.Tests
                     dispatcherType.GetMethod("PostAfterCallback") == null ||
                     dispatcherType.GetMethod("Shutdown") == null ||
                     !dispatcherWorks ||
+                    !callbackHarnessWorks ||
                     dispatchMethod == null ||
                     !CallsMethod(type.GetMethod("SaveSelection"), dispatchMethod) ||
                     !CallsMethod(type.GetMethod("InsertSnippet"), dispatchMethod) ||
@@ -98,6 +104,12 @@ namespace Schnellbausteine.Tests
                     !menuXml.Contains("sqEmpty"))
                 {
                     Console.Error.WriteLine("Ribbon content is incomplete.");
+                    return 1;
+                }
+
+                if (!VerifyDiagnostics(diagnosticLog))
+                {
+                    Console.Error.WriteLine("Callback diagnostic logging is incomplete.");
                     return 1;
                 }
 
@@ -125,6 +137,11 @@ namespace Schnellbausteine.Tests
             {
                 Console.Error.WriteLine(exception);
                 return 1;
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("SCHNELLBAUSTEINE_LOG_PATH", null);
+                if (File.Exists(diagnosticLog)) File.Delete(diagnosticLog);
             }
         }
 
@@ -156,6 +173,8 @@ namespace Schnellbausteine.Tests
             int dispatchedThreadId = callingThreadId;
             var callbackBodyCompleted = new TaskCompletionSource<object>();
             var stopwatch = new Stopwatch();
+            bool result = false;
+            bool shutdown = false;
             try
             {
                 dispatcherType.GetMethod("PostAfterCallback").Invoke(dispatcher, new object[]
@@ -172,7 +191,7 @@ namespace Schnellbausteine.Tests
                 if (completed.WaitOne(TimeSpan.FromMilliseconds(150))) return false;
                 stopwatch.Start();
                 callbackBodyCompleted.SetResult(null);
-                return completed.WaitOne(TimeSpan.FromSeconds(5)) &&
+                result = completed.WaitOne(TimeSpan.FromSeconds(5)) &&
                     stopwatch.Elapsed >= TimeSpan.FromMilliseconds(75) &&
                     apartment == ApartmentState.STA &&
                     dispatchedThreadId != callingThreadId;
@@ -181,8 +200,83 @@ namespace Schnellbausteine.Tests
             {
                 callbackBodyCompleted.TrySetResult(null);
                 completed.Dispose();
-                ((IDisposable)dispatcher).Dispose();
+                shutdown = ShutdownDispatcher(dispatcher, dispatcherType);
             }
+            return result && shutdown;
+        }
+
+        private static bool VerifyCallbackDispatch(object addIn, MethodInfo dispatchMethod)
+        {
+            var callbackBodyCompleted = new TaskCompletionSource<object>();
+            var actionCompleted = new ManualResetEvent(false);
+            ApartmentState apartment = ApartmentState.Unknown;
+            int callingThreadId = Thread.CurrentThread.ManagedThreadId;
+            int dispatchedThreadId = callingThreadId;
+            bool result = false;
+            bool shutdown = false;
+            try
+            {
+                dispatchMethod.Invoke(addIn, new object[]
+                {
+                    "Harness",
+                    callbackBodyCompleted.Task,
+                    "Harness error",
+                    new Action<IntPtr>(delegate
+                    {
+                        apartment = Thread.CurrentThread.GetApartmentState();
+                        dispatchedThreadId = Thread.CurrentThread.ManagedThreadId;
+                        actionCompleted.Set();
+                    })
+                });
+                if (actionCompleted.WaitOne(TimeSpan.FromMilliseconds(150))) return false;
+                callbackBodyCompleted.SetResult(null);
+                result = actionCompleted.WaitOne(TimeSpan.FromSeconds(5)) &&
+                    apartment == ApartmentState.STA &&
+                    dispatchedThreadId != callingThreadId;
+            }
+            finally
+            {
+                callbackBodyCompleted.TrySetResult(null);
+                actionCompleted.Dispose();
+                FieldInfo dispatcherField = addIn.GetType().GetField(
+                    "dispatcher", BindingFlags.Instance | BindingFlags.NonPublic);
+                object dispatcher = dispatcherField.GetValue(addIn);
+                shutdown = ShutdownDispatcher(dispatcher, dispatcher.GetType());
+            }
+            return result && shutdown;
+        }
+
+        private static bool VerifyDiagnostics(string path)
+        {
+            string log = File.ReadAllText(path);
+            string[] required =
+            {
+                "pid=",
+                "thread=",
+                "apartment=",
+                "operation=dispatcher phase=thread.ready",
+                "operation=dispatcher phase=deferred.wait-callback",
+                "operation=dispatcher phase=deferred.callback-complete",
+                "operation=dispatcher phase=action.before",
+                "operation=dispatcher phase=action.after",
+                "operation=dispatcher phase=thread.exit",
+                "operation=dispatcher phase=shutdown.complete",
+                "operation=dispatch.Harness phase=entry",
+                "operation=dispatch.Harness phase=action.entry",
+                "operation=dispatch.Harness phase=action.exit"
+            };
+            string harnessAction = log.Split(new[] { Environment.NewLine },
+                StringSplitOptions.RemoveEmptyEntries).SingleOrDefault(
+                    line => line.Contains("operation=dispatch.Harness phase=action.entry"));
+            return required.All(log.Contains) &&
+                harnessAction != null &&
+                harnessAction.Contains("apartment=STA");
+        }
+
+        private static bool ShutdownDispatcher(object dispatcher, Type dispatcherType)
+        {
+            return (bool)dispatcherType.GetMethod("Shutdown").Invoke(
+                dispatcher, new object[] { TimeSpan.FromSeconds(5) });
         }
     }
 }

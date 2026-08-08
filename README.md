@@ -101,6 +101,11 @@ Zielseite abgebildet.
   **Schnellbausteine** wieder aktivieren.
 - **LoadBehavior wird 2:** Setup erneut ausführen und
   `%LOCALAPPDATA%\Schnellbausteine\addin.log` prüfen.
+- **OneNote reagiert nach einem Befehl nicht:** `addin.log` enthält für Callback,
+  STA-Dispatcher, OneNote-COM und Dialoge jeweils `before`/`after`-Phasen sowie
+  Prozess, Thread und Apartment. Die letzte `before`-Zeile ohne passende
+  `after`-Zeile grenzt den blockierenden Aufruf ein. Seiteninhalte, Namen und
+  Binärdaten werden nicht protokolliert.
 - **Bilder fehlen:** Den Baustein erneut speichern. Der Speichervorgang bricht
   sichtbar ab, wenn OneNote für ein Callback-Bild keine Binärdaten liefert.
 - **Defekter Katalog:** `catalog.json` wird nicht still verworfen. Die

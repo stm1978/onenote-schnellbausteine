@@ -16,6 +16,7 @@ namespace Schnellbausteine.AddIn
 
         public StaDispatcher()
         {
+            Log.Trace("dispatcher", "thread.create");
             thread = new Thread(RunMessageLoop);
             thread.IsBackground = true;
             thread.Name = "Schnellbausteine UI";
@@ -40,7 +41,19 @@ namespace Schnellbausteine.AddIn
                     "Der Schnellbausteine-UI-Thread konnte nicht gestartet werden.", startupException);
             }
 
-            context.Post(delegate { action(); }, null);
+            Log.Trace("dispatcher", "action.queue");
+            context.Post(delegate
+            {
+                Log.Trace("dispatcher", "action.before");
+                try
+                {
+                    action();
+                }
+                finally
+                {
+                    Log.Trace("dispatcher", "action.after");
+                }
+            }, null);
         }
 
         public void PostAfterCallback(
@@ -53,10 +66,14 @@ namespace Schnellbausteine.AddIn
                 throw new ObjectDisposedException("StaDispatcher");
             }
 
+            Log.Trace("dispatcher", "deferred.queue");
             ThreadPool.QueueUserWorkItem(delegate
             {
+                Log.Trace("dispatcher", "deferred.wait-callback");
                 callbackBodyCompleted.Wait();
+                Log.Trace("dispatcher", "deferred.callback-complete");
                 Thread.Sleep(CallbackUnwindDelay);
+                Log.Trace("dispatcher", "deferred.delay-complete");
                 if (Interlocked.CompareExchange(ref disposed, 0, 0) != 0) return;
                 try
                 {
@@ -74,6 +91,7 @@ namespace Schnellbausteine.AddIn
 
         public bool Shutdown(TimeSpan timeout)
         {
+            Log.Trace("dispatcher", "shutdown.request");
             if (Interlocked.Exchange(ref disposed, 1) != 0) return !thread.IsAlive;
             if (!started.Wait(TimeSpan.FromSeconds(1)) || context == null) return !thread.IsAlive;
 
@@ -85,6 +103,7 @@ namespace Schnellbausteine.AddIn
 
             context.Post(delegate { CloseFormsAndExit(); }, null);
             bool stopped = thread.Join(timeout);
+            Log.Trace("dispatcher", stopped ? "shutdown.complete" : "shutdown.timeout");
             if (stopped) started.Dispose();
             return stopped;
         }
@@ -98,12 +117,15 @@ namespace Schnellbausteine.AddIn
         {
             try
             {
+                Log.Trace("dispatcher", "thread.entry");
                 SynchronizationContext.SetSynchronizationContext(
                     new WindowsFormsSynchronizationContext());
                 context = SynchronizationContext.Current;
                 started.Set();
+                Log.Trace("dispatcher", "thread.ready");
                 if (Interlocked.CompareExchange(ref disposed, 0, 0) != 0) return;
                 Application.Run();
+                Log.Trace("dispatcher", "thread.exit");
             }
             catch (Exception exception)
             {
