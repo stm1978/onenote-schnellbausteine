@@ -16,7 +16,6 @@ namespace Schnellbausteine.AddIn
         string GetPageContent(string pageId, bool includeBinaryData, bool includeSelection);
         string GetBinaryPageContent(string pageId, string callbackId);
         void UpdatePageContent(string xml, DateTime expectedLastModifiedTime);
-        void NavigateTo(string pageId, string objectId);
     }
 
     internal sealed class OneNoteApplicationAdapter : IOneNoteApplicationAdapter
@@ -105,11 +104,6 @@ namespace Schnellbausteine.AddIn
                 expectedLastModifiedTime,
                 Schema2013,
                 false);
-        }
-
-        public void NavigateTo(string pageId, string objectId)
-        {
-            application.NavigateTo(pageId, objectId);
         }
 
         public void Dispose()

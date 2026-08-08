@@ -1,20 +1,10 @@
 using System;
 using System.Globalization;
-using System.Runtime.InteropServices;
-using System.Xml;
 using System.Xml.Linq;
 using Schnellbausteine.Core;
 
 namespace Schnellbausteine.AddIn
 {
-    internal sealed class OneNoteFocusException : Exception
-    {
-        public OneNoteFocusException(string message, Exception innerException)
-            : base(message, innerException)
-        {
-        }
-    }
-
     internal sealed class OneNoteClient : IDisposable
     {
         private IOneNoteApplicationAdapter application;
@@ -126,43 +116,20 @@ namespace Schnellbausteine.AddIn
             Log.Trace("onenote.page.update", "exit");
         }
 
-        public void UpdateCurrentPageAndRestoreFocus(XDocument page)
+        public void UpdateCurrentPageAndActivateWindow(XDocument page)
         {
             UpdateCurrentPage(page);
             try
             {
-                Log.Trace("onenote.application.GetPageContent.focus", "before");
-                string refreshedXml = application.GetPageContent(currentPageId, false, true);
-                Log.Trace("onenote.application.GetPageContent.focus", "after");
-                XDocument refreshedPage = XDocument.Parse(
-                    refreshedXml,
-                    LoadOptions.PreserveWhitespace);
-                string targetObjectId =
-                    OneNoteXml.GetPostInsertFocusTargetObjectId(refreshedPage);
-                Log.Diagnostic("onenote.focus.target", "resolved");
-                Log.Trace("onenote.application.NavigateTo", "before");
-                application.NavigateTo(currentPageId, targetObjectId);
-                Log.Trace("onenote.application.NavigateTo", "after");
                 Log.Trace("onenote.window.activate", "before");
                 windowActivator.Activate(currentWindowHandle);
                 Log.Trace("onenote.window.activate", "after");
             }
-            catch (COMException exception)
+            catch (Exception exception)
             {
-                throw new OneNoteFocusException(
-                    "OneNote konnte den eingefügten Cursoranker nicht fokussieren.",
-                    exception);
-            }
-            catch (XmlException exception)
-            {
-                throw new OneNoteFocusException(
-                    "OneNote lieferte nach dem Einfügen ungültiges Seiten-XML.",
-                    exception);
-            }
-            catch (InvalidOperationException exception)
-            {
-                throw new OneNoteFocusException(
-                    "OneNote lieferte nach dem Einfügen keinen eindeutigen Fokusanker.",
+                Log.Error(
+                    "Der Schnellbaustein wurde eingefügt, aber das OneNote-Hauptfenster " +
+                    "konnte nicht aktiviert werden.",
                     exception);
             }
         }
