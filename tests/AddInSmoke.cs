@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Xml.Linq;
 
 namespace Schnellbausteine.Tests
@@ -20,6 +21,18 @@ namespace Schnellbausteine.Tests
             {
                 Assembly assembly = Assembly.LoadFrom(args[0]);
                 Type type = assembly.GetType("Schnellbausteine.AddIn.AddIn", true);
+                Type clientType = assembly.GetType(
+                    "Schnellbausteine.AddIn.OneNoteClient", true);
+                FieldInfo applicationField = clientType.GetField(
+                    "application", BindingFlags.Instance | BindingFlags.NonPublic);
+                bool hasDynamicCallSites = assembly.GetTypes()
+                    .SelectMany(candidate => candidate.GetFields(
+                        BindingFlags.Public | BindingFlags.NonPublic |
+                        BindingFlags.Static | BindingFlags.Instance))
+                    .Any(field => field.FieldType.IsGenericType &&
+                        field.FieldType.GetGenericTypeDefinition() == typeof(CallSite<>));
+                bool referencesDynamicBinder = assembly.GetReferencedAssemblies()
+                    .Any(reference => reference.Name == "Microsoft.CSharp");
                 object addIn = Activator.CreateInstance(type);
                 string ribbonXml = (string)type.GetMethod("GetCustomUI").Invoke(
                     addIn, new object[] { "Microsoft.OneNote" });
@@ -48,6 +61,11 @@ namespace Schnellbausteine.Tests
                     (string)saveButton.Attribute("onAction") != "SaveSelection" ||
                     (string)saveButton.Attribute("insertBeforeMso") != "Cut" ||
                     saveButton.Attribute("getVisible") != null ||
+                    applicationField == null ||
+                    applicationField.FieldType.FullName !=
+                        "Microsoft.Office.Interop.OneNote.IApplication" ||
+                    hasDynamicCallSites ||
+                    referencesDynamicBinder ||
                     type.GetMethod("CanSaveSelection") == null ||
                     type.GetMethod("SaveSelection") == null ||
                     !menuXml.Contains("sqEmpty"))
