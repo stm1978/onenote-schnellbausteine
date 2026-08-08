@@ -1,0 +1,99 @@
+name: Build and release
+
+on:
+  push:
+    branches:
+      - main
+      - stm1978-schnellbausteine-mvp
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install official Microsoft Office PIAs
+        shell: powershell
+        run: |
+          $url = "https://download.microsoft.com/download/c/1/d/c1d6dbbb-700d-4669-98cf-820ac3ae8e55/PIARedist.exe"
+          $redist = Join-Path $env:RUNNER_TEMP "PIARedist.exe"
+          Invoke-WebRequest $url -OutFile $redist
+          $expected = "F1D04AAE514D9734231B05860DFBB644E8DA61C4E1F2A7F5B3E41D2FCA2FAEA9"
+          $actual = (Get-FileHash $redist -Algorithm SHA256).Hash
+          if ($actual -ne $expected) {
+            throw "Office PIA checksum mismatch: $actual"
+          }
+          $process = Start-Process $redist -ArgumentList "/quiet","/norestart" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Office PIA installation failed with exit code $($process.ExitCode)."
+          }
+
+      - name: Build and test x86
+        shell: powershell
+        run: .\test.ps1 -Configuration Release -Platform x86
+
+      - name: Build and test x64
+        shell: powershell
+        run: .\test.ps1 -Configuration Release -Platform x64
+
+      - name: Determine version
+        id: version
+        shell: powershell
+        run: |
+          $version = if ("${{ github.ref_type }}" -eq "tag") {
+            "${{ github.ref_name }}".TrimStart("v")
+          } else {
+            "0.1.0-ci.${{ github.run_number }}"
+          }
+          "value=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Build Setup
+        shell: powershell
+        run: .\installer\Build-Setup.ps1 -Version "${{ steps.version.outputs.value }}" -SkipBuild
+
+      - name: Test x86 Setup lifecycle
+        shell: powershell
+        run: .\installer\Test-Setup.ps1 -SetupPath "artifacts\setup\Schnellbausteine-Setup-${{ steps.version.outputs.value }}.exe" -Platform x86
+
+      - name: Test x64 Setup lifecycle
+        shell: powershell
+        run: .\installer\Test-Setup.ps1 -SetupPath "artifacts\setup\Schnellbausteine-Setup-${{ steps.version.outputs.value }}.exe" -Platform x64
+
+      - name: Upload Setup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Schnellbausteine-Setup-${{ steps.version.outputs.value }}
+          path: artifacts/setup/Schnellbausteine-Setup-${{ steps.version.outputs.value }}.exe
+          if-no-files-found: error
+
+      - name: Create or update GitHub Release
+        if: github.ref_type == 'tag'
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $asset = "artifacts\setup\Schnellbausteine-Setup-${{ steps.version.outputs.value }}.exe"
+          gh release view "${{ github.ref_name }}" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload "${{ github.ref_name }}" $asset --clobber
+          } else {
+            $arguments = @(
+              "release", "create", "${{ github.ref_name }}", $asset,
+              "--title", "Schnellbausteine ${{ github.ref_name }}",
+              "--generate-notes"
+            )
+            if ("${{ github.ref_name }}" -match "-(preview|beta|rc)") {
+              $arguments += "--prerelease"
+            }
+            & gh @arguments
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }

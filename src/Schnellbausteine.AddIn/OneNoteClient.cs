@@ -8,19 +8,25 @@ namespace Schnellbausteine.AddIn
 {
     internal sealed class OneNoteClient : IDisposable
     {
-        private Application application;
+        private const XMLSchema Schema2013 = (XMLSchema)2;
+        private dynamic application;
         private string currentPageId;
 
         public OneNoteClient()
         {
-            application = new Application();
+            Type applicationType = Type.GetTypeFromProgID("OneNote.Application");
+            if (applicationType == null)
+            {
+                throw new InvalidOperationException("OneNote Desktop ist nicht installiert.");
+            }
+            application = Activator.CreateInstance(applicationType);
         }
 
         public XDocument ReadCurrentPage()
         {
             currentPageId = GetCurrentPageId();
             string xml;
-            application.GetPageContent(currentPageId, out xml, PageInfo.piBinaryData, XMLSchema.xs2013);
+            application.GetPageContent(currentPageId, out xml, PageInfo.piBinaryData, Schema2013);
             return XDocument.Parse(xml, LoadOptions.PreserveWhitespace);
         }
 
@@ -35,13 +41,13 @@ namespace Schnellbausteine.AddIn
         public void UpdateCurrentPage(XDocument page)
         {
             if (string.IsNullOrEmpty(currentPageId)) currentPageId = GetCurrentPageId();
-            application.UpdatePageContent(page.ToString(SaveOptions.DisableFormatting), DateTime.MinValue, XMLSchema.xs2013, true);
+            application.UpdatePageContent(page.ToString(SaveOptions.DisableFormatting), DateTime.MinValue, Schema2013, true);
         }
 
         private string GetCurrentPageId()
         {
-            Microsoft.Office.Interop.OneNote.Windows windows = null;
-            Microsoft.Office.Interop.OneNote.Window window = null;
+            dynamic windows = null;
+            dynamic window = null;
             try
             {
                 windows = application.Windows;

@@ -1,85 +1,56 @@
-# Schnellbausteine fur OneNote
+# Schnellbausteine für OneNote
 
-Schnellbausteine ist ein bewusst kleines, lokales COM-Add-in fur **OneNote Desktop
-unter Windows** (Microsoft 365 bzw. OneNote 2016). Markierte OneNote-Inhalte
-lassen sich als benannte Bausteine speichern und spater uber das Start-Menuband
-an der Cursorposition wieder einfugen.
+Schnellbausteine ist ein bewusst kleines, lokales COM-Add-in für **OneNote
+Desktop unter Windows** (Microsoft 365 bzw. OneNote 2016). Markierte
+OneNote-Inhalte lassen sich als benannte Bausteine speichern und später über das
+Start-Menüband an der Cursorposition wieder einfügen.
 
-Das Projekt ist eine eigenstandige Implementierung. Die Architektur orientiert
-sich an den offentlich dokumentierten Mustern von
-[OneMore](https://github.com/stevencohn/OneMore) (MPL-2.0), enthalt aber keinen
+Das Projekt ist eine eigenständige Implementierung. Die Architektur orientiert
+sich an den öffentlich dokumentierten Mustern von
+[OneMore](https://github.com/stevencohn/OneMore) (MPL-2.0), enthält aber keinen
 kopierten OneMore-Quellcode.
 
-## Voraussetzungen
+## Installation für Endnutzer
 
-- Windows 10/11
-- OneNote Desktop aus Microsoft 365 oder OneNote 2016
-- .NET Framework 4.8
-- Zum Bauen: Visual Studio 2022 Build Tools mit **.NET-Desktopentwicklung** und
-  installiertem OneNote/Office PIA
-- PowerShell 5.1 oder neuer
+1. Auf der
+   [Release-Seite](https://github.com/stm1978/onenote-schnellbausteine/releases)
+   die neueste Datei **`Schnellbausteine-Setup-....exe`** herunterladen.
+2. OneNote vollständig schließen.
+3. Die heruntergeladene Setup-Datei doppelklicken und **Installieren** wählen.
+4. OneNote neu starten.
 
-OneNote und Add-in mussen dieselbe Bitness haben. Unter
-`Datei > Konto > Info zu OneNote` steht, ob OneNote 32 oder 64 Bit verwendet.
-x86 und x64 werden unterstutzt. ARM64 ist im MVP nicht enthalten.
+Setup erkennt automatisch, ob OneNote 32 oder 64 Bit verwendet, und installiert
+die passende Add-in-Version ausschließlich für das aktuelle Windows-Konto.
+Administratorrechte und PowerShell-Befehle sind nicht erforderlich.
 
-## Bauen und testen
+**Voraussetzungen:** Windows 10/11, .NET Framework 4.8 und OneNote Desktop aus
+Microsoft 365 oder OneNote 2016. ARM64 ist im MVP nicht enthalten.
 
-In einer Developer PowerShell:
+Die Deinstallation erfolgt wie bei anderen Windows-Programmen unter
+**Einstellungen > Apps > Installierte Apps > Schnellbausteine für OneNote**.
+Gespeicherte Schnellbausteine bleiben dabei erhalten.
 
-```powershell
-.\build.ps1 -Configuration Release -Platform x64
-.\test.ps1 -Configuration Release -Platform x64
-```
-
-Fur 32-Bit-OneNote `-Platform x86` verwenden. `build.ps1` nutzt den mit .NET
-Framework gelieferten C#-Compiler und die lokal installierten Office-PIAs. Die
-Solution kann alternativ direkt mit Visual Studio/MSBuild gebaut werden.
-
-Die Ausgaben liegen in `artifacts\<Plattform>\<Konfiguration>`.
-
-## Installation
-
-OneNote vor Installation und Deinstallation beenden. Danach **ohne
-Administratorrechte**:
-
-```powershell
-.\installer\Install.ps1 -Platform x64 -Configuration Release
-```
-
-Das Skript kopiert die Dateien nach
-`%LOCALAPPDATA%\Schnellbausteine\AddIn\<Plattform>` und registriert den
-COM-Server sowie das OneNote-Add-in ausschliesslich fur den aktuellen Benutzer.
-Es verwendet kein `regasm`. Registriert werden konsistent:
-
-- ProgID `Schnellbausteine.OneNoteAddIn`
-- CLSID `{CCF3B64A-9580-4D44-BDCE-49BFE95AC510}`
-- `HKCU\Software\Microsoft\Office\OneNote\AddIns\Schnellbausteine.OneNoteAddIn`
-- `LoadBehavior=3`
-
-Deinstallation:
-
-```powershell
-.\installer\Uninstall.ps1 -Platform x64
-```
+> Die Vorabversion ist noch nicht digital signiert. Windows SmartScreen kann
+> deshalb beim ersten Start **Weitere Informationen > Trotzdem ausführen**
+> verlangen. Setup selbst benötigt keine erhöhten Rechte.
 
 ## Bedienung
 
 1. Inhalt auf einer OneNote-Seite markieren.
-2. Im Text-Kontextmenu **Als Schnellbaustein speichern...** wahlen und einen
+2. Im Text-Kontextmenü **Als Schnellbaustein speichern...** wählen und einen
    eindeutigen Namen eingeben. Bei Namenskonflikten wird explizit nachgefragt,
-   ob uberschrieben oder ein anderer Name verwendet werden soll.
-3. Im Register **Start** in der Gruppe **Schnellbausteine** das Menu
-   **Einfugen** offnen. Eintrage sind alphabetisch sortiert.
-4. **Verwalten...** benennt Eintrage um oder loscht sie nach Bestatigung.
+   ob überschrieben oder ein anderer Name verwendet werden soll.
+3. Im Register **Start** in der Gruppe **Schnellbausteine** das Menü
+   **Einfügen** öffnen. Einträge sind alphabetisch sortiert.
+4. **Verwalten...** benennt Einträge um oder löscht sie nach Bestätigung.
 
-Beim Einfugen ersetzt ein Baustein markierten Text wie in Word. Reine
-Textfragmente werden direkt in den Lauf eingefugt. Blockinhalte (Listen,
-Tabellen, Bilder oder mehrere Absatze) teilen den aktuellen Absatz sicher und
+Beim Einfügen ersetzt ein Baustein markierten Text wie in Word. Reine
+Textfragmente werden direkt in den Lauf eingefügt. Blockinhalte (Listen,
+Tabellen, Bilder oder mehrere Absätze) teilen den aktuellen Absatz sicher und
 werden dazwischen eingesetzt. Bei einem technisch nicht eindeutig teilbaren
 Cursor in Hyperlink- oder MathML-Inhalt wird der Baustein hinter dem betroffenen
-Absatz eingefugt; der Spezialinhalt bleibt unverandert. Kann OneNote gar keine
-Selection-Markierung liefern, wird am Ende des ersten Outlines eingefugt.
+Absatz eingefügt; der Spezialinhalt bleibt unverändert. Kann OneNote gar keine
+Selection-Markierung liefern, wird am Ende des ersten Outlines eingefügt.
 
 ## Gespeicherte Daten
 
@@ -89,43 +60,75 @@ Alle Daten bleiben lokal unter:
 %LOCALAPPDATA%\Schnellbausteine\Data
 ```
 
-`catalog.json` enthalt nur versionierte Metadaten. Jeder Baustein liegt unter
-einer zufalligen ID als eigene XML-Datei in `snippets`; Namen werden nie als
-Dateinamen verwendet. Schreibvorgange erfolgen uber eine temporare Datei im
-gleichen Verzeichnis und anschliessendes atomisches Ersetzen. Bilder werden als
-Base64-Daten im Fragment gespeichert. OneNote-`TagDef`-Abhangigkeiten werden
-mitgespeichert und beim Einfugen auf die Zielseite abgebildet.
+`catalog.json` enthält nur versionierte Metadaten. Jeder Baustein liegt unter
+einer zufälligen ID als eigene XML-Datei in `snippets`; Namen werden nie als
+Dateinamen verwendet. Schreibvorgänge erfolgen über eine temporäre Datei im
+gleichen Verzeichnis und anschließendes atomisches Ersetzen. Bilder werden als
+Base64-Daten im Fragment gespeichert. OneNote-`TagDef`- und
+`QuickStyleDef`-Abhängigkeiten werden mitgespeichert und beim Einfügen auf die
+Zielseite abgebildet.
 
-## Einschrankungen
+## Einschränkungen
 
-- Nur OneNote Desktop fur Windows; nicht OneNote im Web, macOS oder die alte
+- Nur OneNote Desktop für Windows; nicht OneNote im Web, macOS oder die alte
   Windows-10-Store-App.
 - Keine Cloud-Synchronisierung, Kategorien, KI, Vorlagen oder Platzhalter.
 - Eingebettete Dateien sind nicht Ziel des MVP. Formatierter Text,
-  Uberschriften, Listen, Tabellen, OneNote-Tags/Checkboxen und Bilder werden
-  unterstutzt.
+  Überschriften, Listen, Tabellen, OneNote-Tags/Checkboxen und Bilder werden
+  unterstützt.
 - Hyperlink-/MathML-Spezialcursor werden absichtlich nur an einer sicheren
   Absatzgrenze behandelt, damit kein Inhalt verloren geht.
 
 ## Troubleshooting
 
-- **Add-in fehlt:** OneNote wirklich beenden, korrekte Bitness installieren und
-  unter `Datei > Optionen > Add-Ins` nachsehen. Der Registrierungspfad muss
-  `LoadBehavior=3` enthalten.
-- **LoadBehavior wird 2:** Meist stimmt die Bitness nicht oder eine Abhangigkeit
-  fehlt. Neu bauen/installieren und `%LOCALAPPDATA%\Schnellbausteine\addin.log`
-  prufen.
+- **Setup findet OneNote nicht:** Nur die klassische Desktop-Ausgabe wird
+  unterstützt. OneNote einmal starten, wieder vollständig schließen und Setup
+  erneut ausführen.
+- **Setup meldet, OneNote sei geöffnet:** Auch minimierte OneNote-Fenster
+  schließen. Im Task-Manager darf kein `ONENOTE.EXE` mehr laufen.
+- **Add-in fehlt:** OneNote neu starten und unter
+  `Datei > Optionen > Add-Ins` nachsehen. Bei deaktivierten Elementen
+  **Schnellbausteine** wieder aktivieren.
+- **LoadBehavior wird 2:** Setup erneut ausführen und
+  `%LOCALAPPDATA%\Schnellbausteine\addin.log` prüfen.
 - **Bilder fehlen:** Den Baustein erneut speichern. Der Speichervorgang bricht
-  sichtbar ab, wenn OneNote fur ein Callback-Bild keine Binardaten liefert.
+  sichtbar ab, wenn OneNote für ein Callback-Bild keine Binärdaten liefert.
 - **Defekter Katalog:** `catalog.json` wird nicht still verworfen. Die
   Fehlermeldung und `addin.log` nennen den betroffenen Pfad; die einzelnen
   Fragmentdateien bleiben erhalten.
+
+## Entwicklung
+
+Zum Bauen werden Visual Studio 2022 Build Tools mit
+**.NET-Desktopentwicklung**, .NET Framework 4.8, PowerShell 5.1+ und die mit
+OneNote installierten Office-PIAs benötigt.
+
+```powershell
+.\test.ps1 -Configuration Release -Platform x86
+.\test.ps1 -Configuration Release -Platform x64
+.\installer\Build-Setup.ps1 -Version 0.1.0
+```
+
+Die Build-Ausgaben liegen unter `artifacts\<Plattform>\<Konfiguration>`, Setup
+unter `artifacts\setup`. `Build-Setup.ps1` lädt den offiziell veröffentlichten,
+per SHA-256 fixierten Inno-Setup-Compiler 7.0.2 und baut reproduzierbar beide
+Bitnesses in eine EXE. Die GitHub-Actions-Pipeline führt beide Testsuiten sowie
+stille Installations-, Upgrade-, COM- und Deinstallationstests aus. Bei einem
+Tag `v*` wird Setup automatisch an ein GitHub Release angehängt.
+
+Die PowerShell-Skripte bleiben als Entwickler-Fallback verfügbar:
+
+```powershell
+.\installer\Install.ps1 -Platform x64 -Configuration Release
+.\installer\Uninstall.ps1 -Platform x64
+```
 
 ## Architektur
 
 - `Schnellbausteine.Core`: Repository, atomare Persistenz und OneNote-XML-Logik
 - `Schnellbausteine.AddIn`: COM-Lebenszyklus, Ribbon, OneNote-PIA und WinForms
-- `Schnellbausteine.Tests`: unabhangig ausfuhrbare Unit-Tests
+- `Schnellbausteine.Tests`: unabhängig ausführbare Unit-Tests
+- `installer/Schnellbausteine.iss`: universelles deutsches Inno Setup
 
 Das Add-in nutzt `IDTExtensibility2`, `Microsoft.Office.Core.IRibbonExtensibility`,
 Ribbon Custom UI `2009/07` und OneNote XML `XMLSchema.xs2013`. COM-Objekte werden
