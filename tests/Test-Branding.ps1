@@ -75,6 +75,13 @@ Assert-Equal "Anzahl der Kontext-Speicherbefehle" $saveButtons.Count 4
 foreach ($saveButton in $saveButtons) {
     Assert-Equal "Kontext-Speicherbefehl" $saveButton.label "Als Schnellbaustein speichern..."
 }
+$menuSource = Get-Content (Join-Path $root "src\Schnellbausteine.AddIn\AddIn.cs") -Raw
+if (-not $menuSource.Contains('private const string ManageLabel = "Schnellbausteine verwalten";')) {
+    throw "Das dynamische Menü verwendet nicht das exakte Manage-Label."
+}
+if ($menuSource.Contains('new XAttribute("label", "OneNote Schnellbausteine verwalten")')) {
+    throw "Das alte Manage-Label darf in keinem dynamischen Menü erzeugt werden."
+}
 if ($ribbon.OuterXml.Contains("label=`"$product`"")) {
     throw "Ribbon.xml darf den Produktnamen nicht als sichtbare Ribbon-Beschriftung verwenden."
 }

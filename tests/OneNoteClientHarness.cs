@@ -38,6 +38,20 @@ namespace Schnellbausteine.Tests
             }
         }
 
+        private sealed class FakeRibbonControl : Microsoft.Office.Core.IRibbonControl
+        {
+            private readonly string id;
+
+            public FakeRibbonControl(string id)
+            {
+                this.id = id;
+            }
+
+            public string Id { get { return id; } }
+            public object Context { get { return null; } }
+            public string Tag { get { return string.Empty; } }
+        }
+
         private sealed class FakeWebsiteLauncher : IWebsiteLauncher
         {
             public Uri Website;
@@ -338,7 +352,7 @@ namespace Schnellbausteine.Tests
                 Equal(true, contentXml.Contains(
                     "label=\"A &amp; &lt;Alpha&gt;\""));
                 Equal("Zulu", (string)children[1].Attribute("label"));
-                Equal("OneNote Schnellbausteine verwalten",
+                Equal("Schnellbausteine verwalten",
                     (string)children[3].Attribute("label"));
                 Equal("ManageSnippets", (string)children[3].Attribute("onAction"));
                 Equal(alpha.Id, menu.GetSnippet(
@@ -369,7 +383,7 @@ namespace Schnellbausteine.Tests
                     (string)children[0].Attribute("label"));
                 Equal("false", (string)children[0].Attribute("enabled"));
                 Equal("menuSeparator", children[1].Name.LocalName);
-                Equal("OneNote Schnellbausteine verwalten",
+                Equal("Schnellbausteine verwalten",
                     (string)children[2].Attribute("label"));
                 Throws<InvalidOperationException>(
                     delegate { menu.GetSnippet("sqEmpty"); });
@@ -808,6 +822,15 @@ namespace Schnellbausteine.Tests
                         delegate { Interlocked.Increment(ref insertCalls); }));
                 try
                 {
+                    clock.Value =
+                        new DateTimeOffset(2026, 11, 30, 23, 59, 59, TimeSpan.Zero);
+                    AssertManageMenus(addIn);
+                    clock.Value =
+                        new DateTimeOffset(2026, 12, 31, 23, 0, 0, TimeSpan.Zero);
+                    AssertManageMenus(addIn);
+
+                    clock.Value = new DateTimeOffset(
+                        2027, 1, 1, 0, 0, 0, TimeSpan.Zero);
                     string expiredXml = addIn.GetSnippetMenuContent(null);
                     XDocument expired = XDocument.Parse(expiredXml);
                     XElement[] items = expired.Root.Elements().ToArray();
@@ -816,6 +839,7 @@ namespace Schnellbausteine.Tests
                         (string)items[0].Attribute("label"));
                     Equal("ShowBetaDownload", (string)items[0].Attribute("onAction"));
                     Equal(false, expiredXml.Contains("Vertraulicher Name"));
+                    Equal(false, expiredXml.Contains("Schnellbausteine verwalten"));
 
                     addIn.InsertSnippet(null);
                     Equal(true, presenter.Shown.WaitOne(TimeSpan.FromSeconds(5)));
@@ -829,6 +853,32 @@ namespace Schnellbausteine.Tests
                     presenter.Shown.Dispose();
                 }
             });
+        }
+
+        private static void AssertManageMenus(Schnellbausteine.AddIn.AddIn addIn)
+        {
+            string[] menuIds =
+            {
+                "sqMain",
+                "sqInsertText",
+                "sqInsertOutline",
+                "sqInsertInk",
+                "sqInsertLasso"
+            };
+            foreach (string menuId in menuIds)
+            {
+                string contentXml = addIn.GetSnippetMenuContent(
+                    new FakeRibbonControl(menuId));
+                XElement[] items = XDocument.Parse(contentXml)
+                    .Root.Elements().ToArray();
+                Equal("menuSeparator", items[items.Length - 2].Name.LocalName);
+                Equal("Schnellbausteine verwalten",
+                    (string)items[items.Length - 1].Attribute("label"));
+                Equal("ManageSnippets",
+                    (string)items[items.Length - 1].Attribute("onAction"));
+                Equal(false,
+                    contentXml.Contains("OneNote Schnellbausteine verwalten"));
+            }
         }
 
         private static void WebsiteUsesExactHttpsUriAndSurfacesErrors()

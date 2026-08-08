@@ -272,7 +272,7 @@ namespace Schnellbausteine.Tests
                     manageButton == null ||
                     manageButton.Name != ribbonNamespace + "button" ||
                     !((string)manageButton.Attribute("id")).StartsWith("sqManage_") ||
-                    (string)manageButton.Attribute("label") != "OneNote Schnellbausteine verwalten" ||
+                    (string)manageButton.Attribute("label") != "Schnellbausteine verwalten" ||
                     (string)manageButton.Attribute("onAction") != "ManageSnippets" ||
                     ribbon.Descendants(ribbonNamespace + "gallery").Any() ||
                     ribbon.Descendants(ribbonNamespace + "menu").Any() ||
