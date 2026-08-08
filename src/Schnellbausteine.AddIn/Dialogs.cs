@@ -49,14 +49,14 @@ namespace Schnellbausteine.AddIn
         }
     }
 
-    internal sealed class InsertDialog : Form
+    internal sealed class InsertDialog : Form, IInsertSnippetPicker
     {
         private readonly ListBox list;
 
         public InsertDialog(IList<Snippet> snippets)
         {
             Text = "Schnellbaustein einfügen";
-            StartPosition = FormStartPosition.CenterScreen;
+            StartPosition = FormStartPosition.CenterParent;
             MinimumSize = new Size(420, 280);
             Size = new Size(520, 360);
             ShowInTaskbar = false;
@@ -105,6 +105,15 @@ namespace Schnellbausteine.AddIn
         public Snippet SelectedSnippet
         {
             get { return list.SelectedItem as Snippet; }
+        }
+
+        public bool TrySelect(IWin32Window owner, out Snippet snippet)
+        {
+            Log.Trace("ui.InsertDialog", "before");
+            DialogResult result = ShowDialog(owner);
+            Log.Trace("ui.InsertDialog", "after-" + result);
+            snippet = result == DialogResult.OK ? SelectedSnippet : null;
+            return result == DialogResult.OK;
         }
     }
 

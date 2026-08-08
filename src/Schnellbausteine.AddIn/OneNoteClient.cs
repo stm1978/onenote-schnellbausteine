@@ -18,29 +18,40 @@ namespace Schnellbausteine.AddIn
     internal sealed class OneNoteClient : IDisposable
     {
         private IOneNoteApplicationAdapter application;
+        private readonly IOneNoteWindowActivator windowActivator;
         private string currentPageId;
         private IntPtr currentWindowHandle;
         private DateTime expectedLastModifiedTime;
         private bool hasExpectedLastModifiedTime;
 
         public OneNoteClient()
-            : this(new OneNoteApplicationAdapter())
+            : this(new OneNoteApplicationAdapter(), new OneNoteWindowActivator())
         {
             Log.Trace("onenote.client", "constructor.entry");
         }
 
         internal OneNoteClient(IOneNoteApplicationAdapter application)
+            : this(application, new OneNoteWindowActivator())
+        {
+        }
+
+        internal OneNoteClient(
+            IOneNoteApplicationAdapter application,
+            IOneNoteWindowActivator windowActivator)
         {
             if (application == null) throw new ArgumentNullException("application");
+            if (windowActivator == null) throw new ArgumentNullException("windowActivator");
             this.application = application;
+            this.windowActivator = windowActivator;
         }
 
         internal OneNoteClient(
             IOneNoteApplicationAdapter application,
             string currentPageId,
             IntPtr currentWindowHandle,
-            DateTime expectedLastModifiedTime)
-            : this(application)
+            DateTime expectedLastModifiedTime,
+            IOneNoteWindowActivator windowActivator)
+            : this(application, windowActivator)
         {
             if (string.IsNullOrEmpty(currentPageId))
             {
@@ -132,6 +143,9 @@ namespace Schnellbausteine.AddIn
                 Log.Trace("onenote.application.NavigateTo", "before");
                 application.NavigateTo(currentPageId, targetObjectId);
                 Log.Trace("onenote.application.NavigateTo", "after");
+                Log.Trace("onenote.window.activate", "before");
+                windowActivator.Activate(currentWindowHandle);
+                Log.Trace("onenote.window.activate", "after");
             }
             catch (COMException exception)
             {
@@ -149,6 +163,12 @@ namespace Schnellbausteine.AddIn
             {
                 throw new OneNoteFocusException(
                     "OneNote lieferte nach dem Einfügen keinen eindeutigen Fokusanker.",
+                    exception);
+            }
+            catch (OneNoteWindowActivationException exception)
+            {
+                throw new OneNoteFocusException(
+                    "Das OneNote-Hauptfenster konnte nach dem Einfügen nicht aktiviert werden.",
                     exception);
             }
         }
