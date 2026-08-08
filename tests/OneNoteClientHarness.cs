@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using System.Xml.Linq;
 using Schnellbausteine.AddIn;
@@ -15,6 +17,7 @@ namespace Schnellbausteine.Tests
         {
             public readonly List<string> Calls;
             public Exception UpdateException;
+            public string BinaryData;
 
             public FakeApplication(List<string> calls)
             {
@@ -39,7 +42,8 @@ namespace Schnellbausteine.Tests
 
             public string GetBinaryPageContent(string pageId, string callbackId)
             {
-                throw new NotSupportedException();
+                Calls.Add("binary:" + pageId + ":" + callbackId);
+                return BinaryData;
             }
 
             public void UpdatePageContent(string xml, DateTime expectedLastModifiedTime)
@@ -194,16 +198,17 @@ namespace Schnellbausteine.Tests
                 InsertNeverNavigatesAndActivationFollowsUpdate();
                 ActivationFailureDoesNotFailSuccessfulUpdate();
                 UpdateFailureDoesNotAttemptActivation();
-                GalleryItemsAreSortedAndAddressable();
-                EmptyGalleryItemIsDisabled();
+                MenuItemsAreSortedEscapedAndAddressable();
+                EmptyMenuItemIsDisabled();
                 ActivationFailureIsNonModalAndDoesNotFailInsert();
-                GalleryInvalidationReloadsCrud();
+                MenuInvalidationRejectsStaleIdsAndReloadsCrud();
                 TargetAlreadyForegroundAcceptsSetForegroundFalse();
                 CurrentForegroundAndTargetThreadsAreAttached();
                 AttachedThreadsAreDetachedInFinally();
                 MinimizedTargetIsRestoredBeforeActivation();
                 RejectedActivationDoesNotFailInsert();
-                Console.WriteLine("12/12 OneNote-Client-Harness-Tests erfolgreich.");
+                BinaryCallbacksUseCapturedPageOnClientThread();
+                Console.WriteLine("13/13 OneNote-Client-Harness-Tests erfolgreich.");
                 return 0;
             }
             catch (Exception exception)
@@ -266,39 +271,61 @@ namespace Schnellbausteine.Tests
             Equal("update", string.Join(",", calls));
         }
 
-        private static void GalleryItemsAreSortedAndAddressable()
+        private static void MenuItemsAreSortedEscapedAndAddressable()
         {
             WithTemporaryRepository(delegate(SnippetRepository repository)
             {
                 Snippet zulu = repository.Save("Zulu", Fragment(), false);
-                Snippet alpha = repository.Save("Alpha", Fragment(), false);
-                var gallery = new SnippetGalleryModel(repository);
+                Snippet alpha = repository.Save("A & <Alpha>", Fragment(), false);
+                var menu = new SnippetMenuModel(repository);
+                string contentXml = menu.RefreshAndGetContent("sqMain");
+                XDocument content = XDocument.Parse(contentXml);
+                XNamespace ribbon =
+                    "http://schemas.microsoft.com/office/2009/07/customui";
+                XElement[] children = content.Root.Elements().ToArray();
 
-                Equal(2, gallery.RefreshAndGetCount());
-                Equal("Alpha", gallery.GetLabel(0));
-                Equal("Zulu", gallery.GetLabel(1));
-                Equal("sqSnippet_" + alpha.Id, gallery.GetId(0));
-                Equal("sqSnippet_" + zulu.Id, gallery.GetId(1));
-                Equal(true, gallery.RefreshAndGetEnabled());
-                Equal(alpha.Id, gallery.GetSnippet("sqSnippet_" + alpha.Id, 0).Id);
-                Throws<InvalidOperationException>(delegate
-                {
-                    gallery.GetSnippet("sqSnippet_" + zulu.Id, 0);
-                });
+                Equal(4, children.Length);
+                Equal("button,button,menuSeparator,button",
+                    string.Join(",", children.Select(item => item.Name.LocalName)));
+                Equal("A & <Alpha>", (string)children[0].Attribute("label"));
+                Equal(true, contentXml.Contains(
+                    "label=\"A &amp; &lt;Alpha&gt;\""));
+                Equal("Zulu", (string)children[1].Attribute("label"));
+                Equal("Schnellbausteine verwalten",
+                    (string)children[3].Attribute("label"));
+                Equal("ManageSnippets", (string)children[3].Attribute("onAction"));
+                Equal(alpha.Id, menu.GetSnippet(
+                    (string)children[0].Attribute("id")).Id);
+                Equal(zulu.Id, menu.GetSnippet(
+                    (string)children[1].Attribute("id")).Id);
+                Equal(true, Regex.IsMatch(
+                    (string)children[0].Attribute("id"),
+                    "^sqSnippet_[0-9a-f]{32}_0$"));
+                Equal(false, ((string)children[0].Attribute("id"))
+                    .Contains(alpha.Id));
+                Equal(true, children.All(item => item.Name.Namespace == ribbon));
+                Throws<InvalidOperationException>(
+                    delegate { menu.GetSnippet("sqSnippet_" + alpha.Id); });
             });
         }
 
-        private static void EmptyGalleryItemIsDisabled()
+        private static void EmptyMenuItemIsDisabled()
         {
             WithTemporaryRepository(delegate(SnippetRepository repository)
             {
-                var gallery = new SnippetGalleryModel(repository);
-                Equal(1, gallery.RefreshAndGetCount());
-                Equal("Keine Schnellbausteine gespeichert", gallery.GetLabel(0));
-                Equal("sqEmpty", gallery.GetId(0));
-                Equal(false, gallery.RefreshAndGetEnabled());
+                var menu = new SnippetMenuModel(repository);
+                XDocument content = XDocument.Parse(
+                    menu.RefreshAndGetContent("sqInsertText"));
+                XElement[] children = content.Root.Elements().ToArray();
+                Equal(3, children.Length);
+                Equal("Keine Schnellbausteine gespeichert",
+                    (string)children[0].Attribute("label"));
+                Equal("false", (string)children[0].Attribute("enabled"));
+                Equal("menuSeparator", children[1].Name.LocalName);
+                Equal("Schnellbausteine verwalten",
+                    (string)children[2].Attribute("label"));
                 Throws<InvalidOperationException>(
-                    delegate { gallery.GetSnippet("sqEmpty", 0); });
+                    delegate { menu.GetSnippet("sqEmpty"); });
             });
         }
 
@@ -324,29 +351,56 @@ namespace Schnellbausteine.Tests
             NoCallStartsWith(calls, "navigate:");
         }
 
-        private static void GalleryInvalidationReloadsCrud()
+        private static void MenuInvalidationRejectsStaleIdsAndReloadsCrud()
         {
             WithTemporaryRepository(delegate(SnippetRepository repository)
             {
                 Snippet alpha = repository.Save("Alpha", Fragment(), false);
-                var gallery = new SnippetGalleryModel(repository);
-                Equal(1, gallery.RefreshAndGetCount());
+                var menu = new SnippetMenuModel(repository);
+                XDocument first = XDocument.Parse(
+                    menu.RefreshAndGetContent("sqMain"));
+                string staleId = (string)first.Root.Elements().First()
+                    .Attribute("id");
+                XDocument context = XDocument.Parse(
+                    menu.RefreshAndGetContent("sqInsertText"));
+                string contextId = (string)context.Root.Elements().First()
+                    .Attribute("id");
+                Equal(alpha.Id, menu.GetSnippet(staleId).Id);
+                Equal(alpha.Id, menu.GetSnippet(contextId).Id);
+
+                XDocument refreshedRibbon = XDocument.Parse(
+                    menu.RefreshAndGetContent("sqMain"));
+                string refreshedRibbonId = (string)refreshedRibbon.Root
+                    .Elements().First().Attribute("id");
+                Throws<InvalidOperationException>(
+                    delegate { menu.GetSnippet(staleId); });
+                Equal(alpha.Id, menu.GetSnippet(contextId).Id);
+                Equal(alpha.Id, menu.GetSnippet(refreshedRibbonId).Id);
 
                 Snippet zulu = repository.Save("Zulu", Fragment(), false);
-                gallery.Invalidate();
-                Throws<InvalidOperationException>(delegate { gallery.GetLabel(0); });
-                Equal(2, gallery.RefreshAndGetCount());
+                menu.Invalidate();
+                Throws<InvalidOperationException>(
+                    delegate { menu.GetSnippet(contextId); });
+                XDocument second = XDocument.Parse(
+                    menu.RefreshAndGetContent("sqMain"));
+                Equal(4, second.Root.Elements().Count());
+                Throws<InvalidOperationException>(
+                    delegate { menu.GetSnippet(contextId); });
 
                 repository.Rename(zulu.Id, "Aaron");
-                gallery.Invalidate();
-                Equal(2, gallery.RefreshAndGetCount());
-                Equal("Aaron", gallery.GetLabel(0));
+                menu.Invalidate();
+                XDocument third = XDocument.Parse(
+                    menu.RefreshAndGetContent("sqInsertOutline"));
+                Equal("Aaron", (string)third.Root.Elements().First()
+                    .Attribute("label"));
 
                 repository.Delete(alpha.Id);
                 repository.Delete(zulu.Id);
-                gallery.Invalidate();
-                Equal(1, gallery.RefreshAndGetCount());
-                Equal(false, gallery.RefreshAndGetEnabled());
+                menu.Invalidate();
+                XDocument empty = XDocument.Parse(
+                    menu.RefreshAndGetContent("sqInsertInk"));
+                Equal("false", (string)empty.Root.Elements().First()
+                    .Attribute("enabled"));
             });
         }
 
@@ -449,6 +503,19 @@ namespace Schnellbausteine.Tests
             }
             Contains(calls, "set:100");
             Contains(calls, "bring:100");
+        }
+
+        private static void BinaryCallbacksUseCapturedPageOnClientThread()
+        {
+            var calls = new List<string>();
+            var application = new FakeApplication(calls) { BinaryData = "opaque-data" };
+            using (var client = CreateClient(
+                application,
+                new FakeWindowActivator(calls)))
+            {
+                Equal("opaque-data", client.ReadBinary("ink-callback"));
+            }
+            Equal("binary:page-id:ink-callback", string.Join(",", calls));
         }
 
         private static OneNoteClient CreateClient(

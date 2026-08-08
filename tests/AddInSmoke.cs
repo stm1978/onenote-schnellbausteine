@@ -3,9 +3,12 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.Remoting.Messaging;
+using System.Runtime.Remoting.Proxies;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Forms;
 using System.Xml.Linq;
 
 namespace Schnellbausteine.Tests
@@ -21,6 +24,24 @@ namespace Schnellbausteine.Tests
             public int ThreadId;
         }
 
+        private sealed class RibbonControlProxy : RealProxy
+        {
+            private readonly string id;
+
+            public RibbonControlProxy(Type interfaceType, string id)
+                : base(interfaceType)
+            {
+                this.id = id;
+            }
+
+            public override IMessage Invoke(IMessage message)
+            {
+                var call = (IMethodCallMessage)message;
+                object value = call.MethodName == "get_Id" ? id : null;
+                return new ReturnMessage(value, null, 0, call.LogicalCallContext, call);
+            }
+        }
+
         private static int Main(string[] args)
         {
             if (args.Length < 1 || args.Length > 2)
@@ -32,9 +53,13 @@ namespace Schnellbausteine.Tests
 
             string diagnosticLog =
                 "Schnellbausteine-Smoke-" + Guid.NewGuid().ToString("N") + ".log";
-            string galleryRepositoryRoot = Path.Combine(
+            string menuRepositoryRoot = Path.Combine(
                 Path.GetTempPath(),
                 "Schnellbausteine.AddInSmoke",
+                Guid.NewGuid().ToString("N"));
+            string manageRepositoryRoot = Path.Combine(
+                Path.GetTempPath(),
+                "Schnellbausteine.ManageDialogSmoke",
                 Guid.NewGuid().ToString("N"));
             Environment.SetEnvironmentVariable("SCHNELLBAUSTEINE_LOG_PATH", diagnosticLog);
             Type logType = null;
@@ -83,7 +108,7 @@ namespace Schnellbausteine.Tests
                 MethodInfo selectionMethod = type.GetMethod(
                     "HasCurrentSelection", BindingFlags.Instance | BindingFlags.NonPublic);
                 MethodInfo saveSelectionMethod = type.GetMethod("SaveSelection");
-                MethodInfo insertSnippetMethod = type.GetMethod("InsertGallerySnippet");
+                MethodInfo insertSnippetMethod = type.GetMethod("InsertSnippet");
                 MethodInfo manageSnippetsMethod = type.GetMethod("ManageSnippets");
                 MethodInfo insertSnippetCoreMethod = type.GetMethod(
                     "InsertSnippetCore",
@@ -91,17 +116,11 @@ namespace Schnellbausteine.Tests
                 MethodInfo manageSnippetsCoreMethod = type.GetMethod(
                     "ManageSnippetsCore",
                     BindingFlags.Instance | BindingFlags.NonPublic);
-                MethodInfo invalidateGalleryMethod = type.GetMethod(
-                    "InvalidateSnippetGallery",
+                MethodInfo invalidateMenuMethod = type.GetMethod(
+                    "InvalidateSnippetMenu",
                     BindingFlags.Instance | BindingFlags.NonPublic);
                 MethodInfo readCurrentPageMethod = clientType.GetMethod("ReadCurrentPage");
-                MethodInfo[] galleryGetterMethods = new[]
-                {
-                    type.GetMethod("GetSnippetCount"),
-                    type.GetMethod("GetSnippetLabel"),
-                    type.GetMethod("GetSnippetId"),
-                    type.GetMethod("GetSnippetGalleryEnabled")
-                };
+                MethodInfo menuContentMethod = type.GetMethod("GetSnippetMenuContent");
                 ConstructorInfo[] forbiddenCallbackConstructors =
                     clientType.GetConstructors(
                         BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
@@ -127,31 +146,40 @@ namespace Schnellbausteine.Tests
                 object manageAddIn = Activator.CreateInstance(type);
                 bool manageCallbackHarnessWorks = VerifyDeferredCallback(
                     manageAddIn, manageSnippetsActionField, "ManageSnippets");
-                Directory.CreateDirectory(galleryRepositoryRoot);
-                object galleryRepository = Activator.CreateInstance(
+                Directory.CreateDirectory(menuRepositoryRoot);
+                object menuRepository = Activator.CreateInstance(
                     repositoryType,
-                    new object[] { galleryRepositoryRoot });
-                XDocument galleryFragment = XDocument.Parse(
+                    new object[] { menuRepositoryRoot });
+                XDocument menuFragment = XDocument.Parse(
                     "<sq:Snippet xmlns:sq=\"urn:schnellbausteine:v1\" " +
                     "xmlns:one=\"http://schemas.microsoft.com/office/onenote/2013/onenote\" " +
                     "version=\"1\"><sq:TagDefs/><sq:QuickStyleDefs/><sq:Content>" +
                     "<one:OE><one:T><![CDATA[Test]]></one:T></one:OE>" +
                     "</sq:Content></sq:Snippet>");
                 repositoryType.GetMethod("Save").Invoke(
-                    galleryRepository,
-                    new object[] { "Test", galleryFragment, false });
+                    menuRepository,
+                    new object[] { "Test & <XML>", menuFragment, false });
                 ConstructorInfo repositoryConstructor = type.GetConstructor(
                     BindingFlags.Instance | BindingFlags.NonPublic,
                     null,
                     new[] { repositoryType },
                     null);
-                object galleryAddIn = repositoryConstructor.Invoke(
-                    new[] { galleryRepository });
-                bool itemCallbackHarnessWorks = VerifyDeferredGalleryCallback(
-                    galleryAddIn,
-                    insertSnippetActionField);
-                bool visibilityCallback = (bool)type.GetMethod("CanSaveSelection").Invoke(
-                    addIn, new object[] { null });
+                object menuAddIn = repositoryConstructor.Invoke(
+                    new[] { menuRepository });
+                Type ribbonControlType = menuContentMethod.GetParameters()[0].ParameterType;
+                object mainMenuControl = new RibbonControlProxy(
+                    ribbonControlType,
+                    "sqMain").GetTransparentProxy();
+                string menuContentXml = (string)menuContentMethod.Invoke(
+                    menuAddIn, new[] { mainMenuControl });
+                bool itemCallbackHarnessWorks = VerifyDeferredMenuCallback(
+                    menuAddIn,
+                    insertSnippetActionField,
+                    XDocument.Parse(menuContentXml));
+                bool manageDialogRefreshWorks = VerifyManageDialogRefresh(
+                    manageDialogType,
+                    repositoryType,
+                    manageRepositoryRoot);
                 string ribbonXml = (string)type.GetMethod("GetCustomUI").Invoke(
                     addIn, new object[] { "Microsoft.OneNote" });
                 XNamespace ribbonNamespace =
@@ -159,64 +187,119 @@ namespace Schnellbausteine.Tests
                 XDocument ribbon = XDocument.Parse(ribbonXml);
                 XElement ribbonGroup = ribbon.Descendants(ribbonNamespace + "group")
                     .SingleOrDefault(element => (string)element.Attribute("id") == "sqGroup");
+                XElement insertTab = ribbon.Descendants(ribbonNamespace + "tab")
+                    .SingleOrDefault(element => (string)element.Attribute("idMso") == "TabInsert");
                 XElement mainMenu = ribbonGroup == null
                     ? null
-                    : ribbonGroup.Elements(ribbonNamespace + "menu").SingleOrDefault();
-                XElement gallery = mainMenu == null
-                    ? null
-                    : mainMenu.Elements(ribbonNamespace + "gallery").SingleOrDefault();
-                XElement separator = mainMenu == null
-                    ? null
-                    : mainMenu.Elements(ribbonNamespace + "menuSeparator").SingleOrDefault();
-                XElement manageButton = mainMenu == null
-                    ? null
-                    : mainMenu.Elements(ribbonNamespace + "button").SingleOrDefault();
+                    : ribbonGroup.Elements(ribbonNamespace + "dynamicMenu").SingleOrDefault();
+                XDocument menuContent = XDocument.Parse(menuContentXml);
+                XElement[] menuItems = menuContent.Root.Elements().ToArray();
+                XElement snippetButton = menuItems.FirstOrDefault();
+                XElement separator = menuItems.Skip(1).FirstOrDefault();
+                XElement manageButton = menuItems.Skip(2).FirstOrDefault();
                 XElement contextMenus = ribbon.Root.Element(ribbonNamespace + "contextMenus");
-                XElement textMenu = contextMenus == null
-                    ? null
-                    : contextMenus.Elements(ribbonNamespace + "contextMenu").SingleOrDefault(
-                        element => (string)element.Attribute("idMso") == "ContextMenuText");
-                XElement saveButton = textMenu == null
-                    ? null
-                    : textMenu.Elements(ribbonNamespace + "button").SingleOrDefault(
-                        element => (string)element.Attribute("id") == "sqSaveSelection");
+                string[] contextMenuIds =
+                {
+                    "ContextMenuText",
+                    "ContextMenuOutlineElementHandle",
+                    "ContextMenuInkDrawing",
+                    "ContextMenuLassoSelection"
+                };
+                string[] saveButtonIds =
+                {
+                    "sqSaveSelectionText",
+                    "sqSaveSelectionOutline",
+                    "sqSaveSelectionInk",
+                    "sqSaveSelectionLasso"
+                };
+                string[] insertMenuIds =
+                {
+                    "sqInsertText",
+                    "sqInsertOutline",
+                    "sqInsertInk",
+                    "sqInsertLasso"
+                };
+                XElement[] contextMenuElements = contextMenus == null
+                    ? new XElement[0]
+                    : contextMenuIds.Select(id => contextMenus
+                        .Elements(ribbonNamespace + "contextMenu")
+                        .SingleOrDefault(element => (string)element.Attribute("idMso") == id))
+                        .ToArray();
+                XElement[] saveButtons = contextMenuElements
+                    .Select((menuElement, index) => menuElement == null
+                        ? null
+                        : menuElement.Elements(ribbonNamespace + "button").SingleOrDefault(
+                            element => (string)element.Attribute("id") == saveButtonIds[index]))
+                    .ToArray();
+                XElement[] insertMenus = contextMenuElements
+                    .Select((menuElement, index) => menuElement == null
+                        ? null
+                        : menuElement.Elements(ribbonNamespace + "dynamicMenu")
+                            .SingleOrDefault(element =>
+                                (string)element.Attribute("id") == insertMenuIds[index]))
+                    .ToArray();
+                XElement[] contextSeparators = contextMenuElements
+                    .Select(menuElement => menuElement == null
+                        ? null
+                        : menuElement.Elements(ribbonNamespace + "menuSeparator")
+                            .SingleOrDefault())
+                    .ToArray();
 
-                if (mainMenu == null ||
+                if (insertTab == null ||
+                    ribbon.Descendants(ribbonNamespace + "tab")
+                        .Any(element => (string)element.Attribute("idMso") == "TabHome") ||
+                    mainMenu == null ||
                     ribbonGroup.Elements().Count() != 1 ||
                     (string)mainMenu.Attribute("id") != "sqMain" ||
                     (string)mainMenu.Attribute("label") != "Schnellbausteine" ||
                     (string)mainMenu.Attribute("size") != "large" ||
-                    gallery == null ||
-                    (string)gallery.Attribute("id") != "sqGallery" ||
-                    (string)gallery.Attribute("columns") != "1" ||
-                    (string)gallery.Attribute("itemWidth") != "240" ||
-                    (string)gallery.Attribute("itemHeight") != "24" ||
-                    (string)gallery.Attribute("showLabel") != "false" ||
-                    (string)gallery.Attribute("showItemLabel") != "true" ||
-                    (string)gallery.Attribute("showItemImage") != "false" ||
-                    (string)gallery.Attribute("getItemCount") != "GetSnippetCount" ||
-                    (string)gallery.Attribute("getItemLabel") != "GetSnippetLabel" ||
-                    (string)gallery.Attribute("getItemID") != "GetSnippetId" ||
-                    (string)gallery.Attribute("getEnabled") != "GetSnippetGalleryEnabled" ||
-                    gallery.Attribute("getItemEnabled") != null ||
-                    (string)gallery.Attribute("onAction") != "InsertGallerySnippet" ||
+                    (string)mainMenu.Attribute("getContent") != "GetSnippetMenuContent" ||
+                    mainMenu.Elements().Any() ||
+                    menuContent.Root.Name != ribbonNamespace + "menu" ||
+                    menuItems.Length != 3 ||
+                    snippetButton.Name != ribbonNamespace + "button" ||
+                    (string)snippetButton.Attribute("label") != "Test & <XML>" ||
+                    !((string)snippetButton.Attribute("id")).StartsWith("sqSnippet_") ||
+                    ((string)snippetButton.Attribute("id")).Contains("Test") ||
+                    (string)snippetButton.Attribute("onAction") != "InsertSnippet" ||
                     separator == null ||
-                    (string)separator.Attribute("id") != "sqManageSeparator" ||
+                    separator.Name != ribbonNamespace + "menuSeparator" ||
+                    !((string)separator.Attribute("id"))
+                        .StartsWith("sqManageSeparator_") ||
                     manageButton == null ||
-                    (string)manageButton.Attribute("id") != "sqManage" ||
+                    manageButton.Name != ribbonNamespace + "button" ||
+                    !((string)manageButton.Attribute("id")).StartsWith("sqManage_") ||
                     (string)manageButton.Attribute("label") != "Schnellbausteine verwalten" ||
                     (string)manageButton.Attribute("onAction") != "ManageSnippets" ||
-                    !mainMenu.Elements().SequenceEqual(
-                        new[] { gallery, separator, manageButton }) ||
-                    ribbon.Descendants(ribbonNamespace + "dynamicMenu").Any() ||
+                    ribbon.Descendants(ribbonNamespace + "gallery").Any() ||
+                    ribbon.Descendants(ribbonNamespace + "menu").Any() ||
                     ribbon.Descendants(ribbonNamespace + "form").Any() ||
-                    saveButton == null ||
-                    (string)saveButton.Attribute("label") != "Als Schnellbaustein speichern..." ||
-                    (string)saveButton.Attribute("imageMso") !=
-                        "SaveSelectionToQuickPartGallery" ||
-                    (string)saveButton.Attribute("onAction") != "SaveSelection" ||
-                    (string)saveButton.Attribute("insertBeforeMso") != "Cut" ||
-                    saveButton.Attribute("getVisible") != null ||
+                    contextMenuElements.Any(element => element == null) ||
+                    contextMenuElements.Any(element => element.Elements().Count() != 3) ||
+                    insertMenus.Any(menuElement => menuElement == null) ||
+                    insertMenus.Any(menuElement =>
+                        (string)menuElement.Attribute("label") != "Schnellbausteine" ||
+                        (string)menuElement.Attribute("imageMso") !=
+                            "QuickPartsInsertGallery" ||
+                        (string)menuElement.Attribute("getContent") !=
+                            "GetSnippetMenuContent" ||
+                        menuElement.Elements().Any()) ||
+                    contextSeparators.Any(separatorElement => separatorElement == null) ||
+                    saveButtons.Any(button => button == null) ||
+                    saveButtons.Any(button =>
+                        (string)button.Attribute("label") != "Als Schnellbaustein speichern..." ||
+                        (string)button.Attribute("imageMso") !=
+                            "SaveSelectionToQuickPartGallery" ||
+                        (string)button.Attribute("onAction") != "SaveSelection" ||
+                        button.Attribute("getVisible") != null ||
+                        button.Attribute("getEnabled") != null) ||
+                    (string)saveButtons[0].Attribute("insertBeforeMso") != "Cut" ||
+                    (string)insertMenus[0].Attribute("insertBeforeMso") != "Cut" ||
+                    (string)contextSeparators[0].Attribute("insertBeforeMso") != "Cut" ||
+                    ribbon.Descendants()
+                        .Where(element => element.Attribute("id") != null)
+                        .GroupBy(element => (string)element.Attribute("id"))
+                        .Any(group => group.Count() != 1) ||
                     applicationField == null ||
                     applicationField.FieldType != applicationAdapterInterfaceType ||
                     piaApplicationField == null ||
@@ -233,21 +316,11 @@ namespace Schnellbausteine.Tests
                     manageSnippetsActionField == null ||
                     manageSnippetsActionField.FieldType != typeof(Action<IntPtr>) ||
                     ribbonUiField == null ||
-                    galleryGetterMethods.Any(method => method == null) ||
-                    galleryGetterMethods.Any(method =>
-                        method.GetParameters().Length < 1 ||
-                        method.GetParameters()[0].ParameterType.FullName !=
-                            "Microsoft.Office.Core.IRibbonControl") ||
-                    galleryGetterMethods[0].ReturnType != typeof(int) ||
-                    galleryGetterMethods[0].GetParameters().Length != 1 ||
-                    galleryGetterMethods[1].ReturnType != typeof(string) ||
-                    galleryGetterMethods[1].GetParameters().Length != 2 ||
-                    galleryGetterMethods[1].GetParameters()[1].ParameterType != typeof(int) ||
-                    galleryGetterMethods[2].ReturnType != typeof(string) ||
-                    galleryGetterMethods[2].GetParameters().Length != 2 ||
-                    galleryGetterMethods[2].GetParameters()[1].ParameterType != typeof(int) ||
-                    galleryGetterMethods[3].ReturnType != typeof(bool) ||
-                    galleryGetterMethods[3].GetParameters().Length != 1 ||
+                    menuContentMethod == null ||
+                    menuContentMethod.ReturnType != typeof(string) ||
+                    menuContentMethod.GetParameters().Length != 1 ||
+                    menuContentMethod.GetParameters()[0].ParameterType.FullName !=
+                        "Microsoft.Office.Core.IRibbonControl" ||
                     dispatcherType.GetMethod("Post") == null ||
                     dispatcherType.GetMethod("PostAfterCallback") == null ||
                     dispatcherType.GetMethod("Shutdown") == null ||
@@ -256,34 +329,32 @@ namespace Schnellbausteine.Tests
                     !saveCallbackHarnessWorks ||
                     !manageCallbackHarnessWorks ||
                     !itemCallbackHarnessWorks ||
+                    !manageDialogRefreshWorks ||
                     dispatchMethod == null ||
                     !CallsMember(saveSelectionMethod, dispatchMethod) ||
                     forbiddenCallbackConstructors.Any(
                         constructor => CallsMember(saveSelectionMethod, constructor)) ||
                     forbiddenCallbackConstructors.Any(
-                        constructor => galleryGetterMethods.Any(
-                            getter => CallsMember(getter, constructor))) ||
+                        constructor => CallsMember(menuContentMethod, constructor)) ||
                     insertSnippetMethod == null ||
                     insertSnippetMethod.ReturnType != typeof(void) ||
-                    insertSnippetMethod.GetParameters().Length != 3 ||
+                    insertSnippetMethod.GetParameters().Length != 1 ||
                     insertSnippetMethod.GetParameters()[0].ParameterType.FullName !=
                         "Microsoft.Office.Core.IRibbonControl" ||
-                    insertSnippetMethod.GetParameters()[1].ParameterType != typeof(string) ||
-                    insertSnippetMethod.GetParameters()[2].ParameterType != typeof(int) ||
                     !CallsMethod(insertSnippetMethod, dispatchMethod) ||
                     forbiddenCallbackConstructors.Any(
                         constructor => CallsMember(insertSnippetMethod, constructor)) ||
                     insertSnippetCoreMethod == null ||
                     !CallsMethod(insertSnippetCoreMethod, readCurrentPageMethod) ||
                     manageSnippetsCoreMethod == null ||
-                    invalidateGalleryMethod == null ||
+                    invalidateMenuMethod == null ||
                     !CallsMember(saveSelectionMethod.DeclaringType.GetMethod(
                         "SaveSelectionCore",
                         BindingFlags.Instance | BindingFlags.NonPublic),
-                        invalidateGalleryMethod) ||
-                    !CallsMember(manageSnippetsCoreMethod, invalidateGalleryMethod) ||
+                        invalidateMenuMethod) ||
+                    !CallsMember(manageSnippetsCoreMethod, invalidateMenuMethod) ||
                     !CallsMember(
-                        invalidateGalleryMethod,
+                        invalidateMenuMethod,
                         ribbonUiField.FieldType.GetMethod("InvalidateControl")) ||
                     popupType != null ||
                     popupInterfaceType != null ||
@@ -296,11 +367,14 @@ namespace Schnellbausteine.Tests
                         .Any(method => method.Name == "NavigateTo") ||
                     hasDynamicCallSites ||
                     referencesDynamicBinder ||
-                    !visibilityCallback ||
-                    type.GetMethod("CanSaveSelection") == null ||
+                    type.GetMethod("CanSaveSelection") != null ||
                     selectionMethod == null ||
                     type.GetMethod("SaveSelection") == null ||
-                    type.GetMethod("GetSnippetMenuContent") != null)
+                    type.GetMethod("GetSnippetCount") != null ||
+                    type.GetMethod("GetSnippetLabel") != null ||
+                    type.GetMethod("GetSnippetId") != null ||
+                    type.GetMethod("GetSnippetGalleryEnabled") != null ||
+                    type.GetMethod("InsertGallerySnippet") != null)
                 {
                     Console.Error.WriteLine("Ribbon content is incomplete.");
                     return 1;
@@ -348,11 +422,115 @@ namespace Schnellbausteine.Tests
                 }
                 Environment.SetEnvironmentVariable("SCHNELLBAUSTEINE_LOG_PATH", null);
                 if (File.Exists(diagnosticLog)) File.Delete(diagnosticLog);
-                if (Directory.Exists(galleryRepositoryRoot))
+                if (Directory.Exists(menuRepositoryRoot))
                 {
-                    Directory.Delete(galleryRepositoryRoot, true);
+                    Directory.Delete(menuRepositoryRoot, true);
+                }
+                if (Directory.Exists(manageRepositoryRoot))
+                {
+                    Directory.Delete(manageRepositoryRoot, true);
                 }
             }
+        }
+
+        private static bool VerifyManageDialogRefresh(
+            Type manageDialogType,
+            Type repositoryType,
+            string repositoryRoot)
+        {
+            Directory.CreateDirectory(repositoryRoot);
+            object repository = Activator.CreateInstance(
+                repositoryType,
+                new object[] { repositoryRoot });
+            MethodInfo save = repositoryType.GetMethod("Save");
+            MethodInfo rename = repositoryType.GetMethod("Rename");
+            MethodInfo delete = repositoryType.GetMethod("Delete");
+            XDocument fragment = XDocument.Parse(
+                "<sq:Snippet xmlns:sq=\"urn:schnellbausteine:v1\" " +
+                "xmlns:one=\"http://schemas.microsoft.com/office/onenote/2013/onenote\" " +
+                "version=\"1\"><sq:TagDefs/><sq:QuickStyleDefs/><sq:Content>" +
+                "<one:OE><one:T><![CDATA[Test]]></one:T></one:OE>" +
+                "</sq:Content></sq:Snippet>");
+            object alpha = save.Invoke(
+                repository,
+                new object[] { "Alpha", fragment, false });
+            object beta = save.Invoke(
+                repository,
+                new object[] { "Beta", fragment, false });
+            PropertyInfo id = alpha.GetType().GetProperty("Id");
+            string alphaId = (string)id.GetValue(alpha, null);
+            string betaId = (string)id.GetValue(beta, null);
+            Form dialog = null;
+            try
+            {
+                dialog = (Form)Activator.CreateInstance(
+                    manageDialogType,
+                    new object[] { repository, new Action(delegate { }) });
+                ListBox list = (ListBox)manageDialogType.GetField(
+                    "list",
+                    BindingFlags.Instance | BindingFlags.NonPublic).GetValue(dialog);
+                MethodInfo loadItems = manageDialogType.GetMethod(
+                    "LoadItems",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                if (ListText(list) != "Alpha,Beta") return false;
+
+                list.SelectedItem = list.Items.Cast<object>().Single(item =>
+                    (string)id.GetValue(item, null) == alphaId);
+                delete.Invoke(repository, new object[] { betaId });
+                loadItems.Invoke(dialog, null);
+                if (ListText(list) != "Alpha" ||
+                    (string)id.GetValue(list.SelectedItem, null) != alphaId)
+                {
+                    return false;
+                }
+
+                rename.Invoke(repository, new object[] { alphaId, "Aaron" });
+                loadItems.Invoke(dialog, null);
+                if (ListText(list) != "Aaron" ||
+                    (string)id.GetValue(list.SelectedItem, null) != alphaId)
+                {
+                    return false;
+                }
+
+                object zulu = save.Invoke(
+                    repository,
+                    new object[] { "Zulu", fragment, false });
+                string zuluId = (string)id.GetValue(zulu, null);
+                loadItems.Invoke(dialog, null);
+                if (ListText(list) != "Aaron,Zulu" ||
+                    (string)id.GetValue(list.SelectedItem, null) != alphaId)
+                {
+                    return false;
+                }
+
+                delete.Invoke(repository, new object[] { alphaId });
+                loadItems.Invoke(dialog, null);
+                if (ListText(list) != "Zulu" ||
+                    list.SelectedItem == null ||
+                    (string)id.GetValue(list.SelectedItem, null) != zuluId)
+                {
+                    return false;
+                }
+
+                delete.Invoke(repository, new object[] { zuluId });
+                loadItems.Invoke(dialog, null);
+                if (list.Items.Count != 0 || list.SelectedItem != null) return false;
+
+                save.Invoke(repository, new object[] { "Gamma", fragment, false });
+                loadItems.Invoke(dialog, null);
+                return ListText(list) == "Gamma";
+            }
+            finally
+            {
+                if (dialog != null) dialog.Dispose();
+            }
+        }
+
+        private static string ListText(ListBox list)
+        {
+            return string.Join(
+                ",",
+                list.Items.Cast<object>().Select(item => list.GetItemText(item)));
         }
 
         private static bool CallsMethod(MethodInfo caller, MethodInfo called)
@@ -503,9 +681,10 @@ namespace Schnellbausteine.Tests
             return result && shutdown;
         }
 
-        private static bool VerifyDeferredGalleryCallback(
+        private static bool VerifyDeferredMenuCallback(
             object addIn,
-            FieldInfo actionField)
+            FieldInfo actionField,
+            XDocument menuContent)
         {
             var actionCompleted = new ManualResetEvent(false);
             ApartmentState apartment = ApartmentState.Unknown;
@@ -527,27 +706,24 @@ namespace Schnellbausteine.Tests
                     receivedSnippet = snippet != null &&
                         (string)snippet.GetType().GetProperty("Name").GetValue(
                             snippet,
-                            null) == "Test";
+                            null) == "Test & <XML>";
                     actionCompleted.Set();
                 };
                 actionField.SetValue(addIn, action);
-                if ((int)addIn.GetType().GetMethod("GetSnippetCount").Invoke(
-                    addIn,
-                    new object[] { null }) != 1)
-                {
-                    return false;
-                }
-                string selectedItemId =
-                    (string)addIn.GetType().GetMethod("GetSnippetId").Invoke(
-                        addIn,
-                        new object[] { null, 0 });
+                string selectedItemId = (string)menuContent.Root.Elements().First()
+                    .Attribute("id");
+                Type ribbonControlType = addIn.GetType().GetMethod("InsertSnippet")
+                    .GetParameters()[0].ParameterType;
+                object control = new RibbonControlProxy(
+                    ribbonControlType,
+                    selectedItemId).GetTransparentProxy();
                 MtaInvocation invocation = InvokeOnMta(delegate
                 {
                     try
                     {
-                        addIn.GetType().GetMethod("InsertGallerySnippet").Invoke(
+                        addIn.GetType().GetMethod("InsertSnippet").Invoke(
                             addIn,
-                            new object[] { null, selectedItemId, 0 });
+                            new[] { control });
                     }
                     finally
                     {

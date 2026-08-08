@@ -63,7 +63,13 @@ namespace Schnellbausteine.AddIn
             MinimumSize = new Size(500, 330);
             Size = new Size(600, 420);
 
-            list = new ListBox { Dock = DockStyle.Fill, DisplayMember = "Name" };
+            list = new ListBox
+            {
+                Dock = DockStyle.Fill,
+                DisplayMember = "Name",
+                FormattingEnabled = true
+            };
+            list.Format += FormatSnippetName;
             var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 46, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(6) };
             var close = new Button { Text = "Schließen", Width = 90, DialogResult = DialogResult.OK };
             var delete = new Button { Text = "Löschen", Width = 90 };
@@ -83,6 +89,7 @@ namespace Schnellbausteine.AddIn
         {
             string selectedId = Selected == null ? null : Selected.Id;
             list.DataSource = null;
+            list.DisplayMember = "Name";
             list.DataSource = repository.GetAll();
             if (selectedId != null)
             {
@@ -91,6 +98,14 @@ namespace Schnellbausteine.AddIn
                     if (((Snippet)item).Id == selectedId) list.SelectedItem = item;
                 }
             }
+        }
+
+        private static void FormatSnippetName(
+            object sender,
+            ListControlConvertEventArgs e)
+        {
+            var snippet = e.ListItem as Snippet;
+            if (snippet != null) e.Value = snippet.Name;
         }
 
         private void Rename(object sender, EventArgs e)

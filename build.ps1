@@ -72,7 +72,7 @@ $surrogateSource = Join-Path $root "tests\SurrogateSmoke.cs"
 if ($LASTEXITCODE -ne 0) { throw "Surrogate-Test-Kompilierung fehlgeschlagen." }
 
 $addInSmokeSource = Join-Path $root "tests\AddInSmoke.cs"
-& $csc @common /target:exe /platform:$Platform /out:"$output\Schnellbausteine.AddInSmoke.exe" /r:System.Xml.Linq.dll $addInSmokeSource
+& $csc @common /target:exe /platform:$Platform /out:"$output\Schnellbausteine.AddInSmoke.exe" /r:System.Xml.Linq.dll /r:System.Windows.Forms.dll $addInSmokeSource
 if ($LASTEXITCODE -ne 0) { throw "Add-in-Smoke-Test-Kompilierung fehlgeschlagen." }
 
 $oneNoteClientHarnessSource = Join-Path $root "tests\OneNoteClientHarness.cs"
