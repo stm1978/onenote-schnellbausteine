@@ -28,9 +28,16 @@ if (-not (Test-Path $compiler)) {
     if ($actualHash -ne $expectedHash) {
         throw "Die Prüfsumme des Inno-Setup-Installers ist ungültig. Erwartet: $expectedHash; erhalten: $actualHash"
     }
-    & $download /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CURRENTUSER /DIR="$toolRoot"
-    if ($LASTEXITCODE -ne 0) {
-        throw "Inno Setup konnte nicht lokal bereitgestellt werden (Exitcode $LASTEXITCODE)."
+    $install = Start-Process $download -ArgumentList @(
+        "/VERYSILENT",
+        "/SUPPRESSMSGBOXES",
+        "/NORESTART",
+        "/SP-",
+        "/CURRENTUSER",
+        "/DIR=$toolRoot"
+    ) -Wait -PassThru
+    if ($install.ExitCode -ne 0) {
+        throw "Inno Setup konnte nicht lokal bereitgestellt werden (Exitcode $($install.ExitCode))."
     }
     for ($attempt = 0; $attempt -lt 20 -and -not (Test-Path $compiler); $attempt++) {
         Start-Sleep -Milliseconds 250
