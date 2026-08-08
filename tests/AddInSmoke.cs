@@ -23,7 +23,9 @@ namespace Schnellbausteine.Tests
                 string menuXml = (string)type.GetMethod("GetSnippetMenuContent").Invoke(
                     addIn, new object[] { null });
 
-                if (!ribbonXml.Contains("sqInsertMenu") || !menuXml.Contains("sqEmpty"))
+                if (!ribbonXml.Contains("sqInsertMenu") ||
+                    !ribbonXml.Contains("label=\"Einfügen\"") ||
+                    !menuXml.Contains("sqEmpty"))
                 {
                     Console.Error.WriteLine("Ribbon content is incomplete.");
                     return 1;
