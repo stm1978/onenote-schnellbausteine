@@ -50,7 +50,7 @@ namespace Schnellbausteine.AddIn
                 out parsedLastModified))
             {
                 throw new InvalidOperationException(
-                    "OneNote lieferte keinen gultigen Anderungszeitpunkt fur die aktive Seite.");
+                    "OneNote lieferte keinen gültigen Änderungszeitpunkt für die aktive Seite.");
             }
             expectedLastModifiedTime = parsedLastModified;
             hasExpectedLastModifiedTime = true;
@@ -83,8 +83,9 @@ namespace Schnellbausteine.AddIn
             if (!hasExpectedLastModifiedTime)
             {
                 throw new InvalidOperationException(
-                    "Die Seite wurde vor dem Aktualisieren nicht mit Anderungszeitpunkt gelesen.");
+                    "Die Seite wurde vor dem Aktualisieren nicht mit Änderungszeitpunkt gelesen.");
             }
+            OneNoteXml.ValidatePostInsertCaret(page);
             Log.Trace("onenote.application.UpdatePageContent", "before");
             application.UpdatePageContent(
                 page.ToString(SaveOptions.DisableFormatting),
@@ -94,6 +95,17 @@ namespace Schnellbausteine.AddIn
             Log.Trace("onenote.application.UpdatePageContent", "after");
             hasExpectedLastModifiedTime = false;
             Log.Trace("onenote.page.update", "exit");
+        }
+
+        public void NavigateToCurrentPage()
+        {
+            if (string.IsNullOrEmpty(currentPageId))
+            {
+                throw new InvalidOperationException("Es ist keine aktuelle OneNote-Seite bekannt.");
+            }
+            Log.Trace("onenote.application.NavigateTo", "before");
+            application.NavigateTo(currentPageId);
+            Log.Trace("onenote.application.NavigateTo", "after");
         }
 
         private string GetCurrentPageId()

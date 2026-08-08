@@ -145,7 +145,7 @@ namespace Schnellbausteine.Core
                     var catalog = (SnippetCatalog)serializer.ReadObject(stream);
                     if (catalog == null || catalog.Version != 1 || catalog.Snippets == null)
                     {
-                        throw new SnippetRepositoryException("Nicht unterstutzte Katalogversion in " + catalogPath);
+                        throw new SnippetRepositoryException("Nicht unterstützte Katalogversion in " + catalogPath);
                     }
 
                     return catalog;
@@ -185,8 +185,8 @@ namespace Schnellbausteine.Core
             if (name == null) throw new ArgumentNullException("name");
             string value = name.Trim();
             if (value.Length == 0) throw new ArgumentException("Der Name darf nicht leer sein.", "name");
-            if (value.Length > 100) throw new ArgumentException("Der Name darf hochstens 100 Zeichen enthalten.", "name");
-            if (value.Any(char.IsControl)) throw new ArgumentException("Der Name enthalt unzulassige Steuerzeichen.", "name");
+            if (value.Length > 100) throw new ArgumentException("Der Name darf höchstens 100 Zeichen enthalten.", "name");
+            if (value.Any(char.IsControl)) throw new ArgumentException("Der Name enthält unzulässige Steuerzeichen.", "name");
             return value;
         }
 

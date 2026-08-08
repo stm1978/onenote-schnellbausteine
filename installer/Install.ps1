@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateSet("x86", "x64")]
     [string]$Platform = "x64",
     [ValidateSet("Debug", "Release")]
@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $source = Join-Path $root "artifacts\$Platform\$Configuration"
 if (-not (Test-Path "$source\Schnellbausteine.AddIn.dll")) {
-    throw "Build nicht gefunden. Zuerst .\build.ps1 -Configuration $Configuration -Platform $Platform ausfuhren."
+    throw "Build nicht gefunden. Zuerst .\build.ps1 -Configuration $Configuration -Platform $Platform ausführen."
 }
 
 $target = Join-Path $env:LOCALAPPDATA "Schnellbausteine\AddIn\$Platform"
@@ -28,7 +28,7 @@ $codeBase = ([Uri]$assemblyPath).AbsoluteUri
 
 try {
     $class = $base.CreateSubKey("Software\Classes\CLSID\$clsid")
-    $class.SetValue("", "Schnellbausteine fur OneNote")
+    $class.SetValue("", "Schnellbausteine für OneNote")
     $class.SetValue("AppID", $clsid)
     $class.CreateSubKey("ProgID").SetValue("", $progId)
     $class.CreateSubKey("VersionIndependentProgID").SetValue("", $progId)
@@ -52,18 +52,18 @@ try {
     $class.Close()
 
     $prog = $base.CreateSubKey("Software\Classes\$progId")
-    $prog.SetValue("", "Schnellbausteine fur OneNote")
+    $prog.SetValue("", "Schnellbausteine für OneNote")
     $prog.CreateSubKey("CLSID").SetValue("", $clsid)
     $prog.Close()
 
     $appId = $base.CreateSubKey("Software\Classes\AppID\$clsid")
-    $appId.SetValue("", "Schnellbausteine fur OneNote")
+    $appId.SetValue("", "Schnellbausteine für OneNote")
     $appId.SetValue("DllSurrogate", "")
     $appId.Close()
 
     $addIn = $base.CreateSubKey("Software\Microsoft\Office\OneNote\AddIns\$progId")
     $addIn.SetValue("FriendlyName", "Schnellbausteine")
-    $addIn.SetValue("Description", "Lokale Schnellbausteine fur OneNote Desktop")
+    $addIn.SetValue("Description", "Lokale Schnellbausteine für OneNote Desktop")
     $addIn.SetValue("LoadBehavior", 3, [Microsoft.Win32.RegistryValueKind]::DWord)
     $addIn.Close()
 }
@@ -71,4 +71,4 @@ finally {
     $base.Close()
 }
 
-Write-Host "Schnellbausteine ($Platform) fur den aktuellen Benutzer installiert. OneNote jetzt starten."
+Write-Host "Schnellbausteine ($Platform) für den aktuellen Benutzer installiert. OneNote jetzt starten."

@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)]
     [string]$SetupPath,
     [ValidateSet("x86", "x64")]
@@ -38,7 +38,7 @@ if (-not (Test-Path $addInSmoke)) {
     throw "Managed-Add-in-Test fehlt: $addInSmoke"
 }
 if ((Get-AddInSurrogate).Count -ne 0) {
-    throw "Ein alter Schnellbausteine-COM-Surrogatprozess lauft noch."
+    throw "Ein alter Schnellbausteine-COM-Surrogatprozess läuft noch."
 }
 
 New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
@@ -160,4 +160,4 @@ finally {
     Remove-Item $marker -Force
 }
 
-Write-Host "Setup-Lebenszyklus fur $Platform erfolgreich."
+Write-Host "Setup-Lebenszyklus für $Platform erfolgreich."

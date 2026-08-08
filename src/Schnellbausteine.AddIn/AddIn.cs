@@ -225,7 +225,7 @@ namespace Schnellbausteine.AddIn
                     Snippet snippet = dialog.SelectedSnippet;
                     if (snippet == null)
                     {
-                        throw new InvalidOperationException("Es wurde kein Schnellbaustein ausgewahlt.");
+                        throw new InvalidOperationException("Es wurde kein Schnellbaustein ausgewählt.");
                     }
 
                     Log.Trace("repository.load", "before");
@@ -237,6 +237,18 @@ namespace Schnellbausteine.AddIn
                     Log.Diagnostic("onenote.insert.anchor", insertion.ToDiagnosticString());
                     Log.Trace("onenote.xml.insert", "after");
                     oneNote.UpdateCurrentPage(anchoredPage);
+                    try
+                    {
+                        oneNote.NavigateToCurrentPage();
+                    }
+                    catch (COMException exception)
+                    {
+                        const string message =
+                            "Der Schnellbaustein wurde eingefügt, aber OneNote konnte nicht erneut fokussiert werden.";
+                        Log.Error(message, exception);
+                        MessageBox.Show(owner, message, "Schnellbausteine",
+                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
                 }
             }
             Log.Trace("command.InsertSnippet", "exit");

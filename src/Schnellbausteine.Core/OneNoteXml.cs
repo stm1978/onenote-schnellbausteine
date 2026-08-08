@@ -118,7 +118,7 @@ namespace Schnellbausteine.Core
                 }
             }
 
-            if (roots.Count == 0) throw new InvalidOperationException("Die OneNote-Auswahl enthalt keinen speicherbaren Inhalt.");
+            if (roots.Count == 0) throw new InvalidOperationException("Die OneNote-Auswahl enthält keinen speicherbaren Inhalt.");
 
             var content = new XElement(Snippet + "Content");
             foreach (XElement root in roots)
@@ -210,13 +210,13 @@ namespace Schnellbausteine.Core
             if (selection.Info.Scope == "TableCell")
             {
                 InsertIntoTableCell(markers[0], incoming);
-                return new OneNoteInsertionResult(selection.Info, "ReplaceTableCell");
+                return CompleteInsertion(page, selection.Info, "ReplaceTableCell");
             }
 
             if (selection.Info.Scope == "SpecialCursor")
             {
                 InsertAfterContainingParagraph(markers[0], incoming);
-                return new OneNoteInsertionResult(selection.Info, "AfterSpecialParagraph");
+                return CompleteInsertion(page, selection.Info, "AfterSpecialParagraph");
             }
 
             if (CanInsertInline(incoming) &&
@@ -224,11 +224,48 @@ namespace Schnellbausteine.Core
                 markers.Select(marker => marker.Parent).Distinct().Count() == 1)
             {
                 InsertInline(markers, incoming[0]);
-                return new OneNoteInsertionResult(selection.Info, "Inline");
+                return CompleteInsertion(page, selection.Info, "Inline");
             }
 
             InsertBlocks(markers, incoming);
-            return new OneNoteInsertionResult(selection.Info, "BlockRange");
+            return CompleteInsertion(page, selection.Info, "BlockRange");
+        }
+
+        public static void ValidatePostInsertCaret(XDocument page)
+        {
+            if (page == null) throw new ArgumentNullException("page");
+            if (page.Root == null)
+            {
+                throw new InvalidOperationException("Das OneNote-Seitendokument besitzt kein Wurzelelement.");
+            }
+
+            List<XAttribute> selectionMarkers = page.Root
+                .DescendantsAndSelf()
+                .Attributes()
+                .Where(attribute => attribute.Name.LocalName == "selected")
+                .ToList();
+            if (selectionMarkers.Count != 1)
+            {
+                throw new InvalidOperationException(
+                    "Die aktualisierte Seite muss genau einen Cursoranker enthalten.");
+            }
+
+            XAttribute marker = selectionMarkers[0];
+            XElement caret = marker.Parent;
+            bool validCaret =
+                caret != null &&
+                caret.Name == One + "T" &&
+                string.Equals(marker.Value, "all", StringComparison.Ordinal) &&
+                caret.Parent != null &&
+                caret.Parent.Name == One + "OE" &&
+                caret.Nodes().Count() == 1 &&
+                caret.Nodes().Single() is XCData &&
+                caret.Value.Length == 0;
+            if (!validCaret)
+            {
+                throw new InvalidOperationException(
+                    "Der Cursoranker muss ein leeres one:T selected=\"all\" in einem one:OE sein.");
+            }
         }
 
         private static void InsertInline(IList<XElement> markers, XElement incoming)
@@ -250,12 +287,12 @@ namespace Schnellbausteine.Core
             }
 
             XElement lastText = nodes.OfType<XElement>().LastOrDefault(element => element.Name == One + "T");
-            if (lastText != null)
+            if (lastText == null)
             {
-                lastText.AddAfterSelf(new XElement(One + "T",
-                    new XAttribute("selected", "all"),
-                    new XCData(string.Empty)));
+                throw new InvalidOperationException("Der Textbaustein enthält keinen Textknoten.");
             }
+            ClearSelection(lastText.Document);
+            lastText.AddAfterSelf(CreateCaretText());
         }
 
         private static void InsertBlocks(IList<XElement> markers, IList<XElement> incoming)
@@ -278,7 +315,7 @@ namespace Schnellbausteine.Core
             XElement parent = paragraphs[0].Parent;
             if (paragraphs.Any(paragraph => !ReferenceEquals(paragraph.Parent, parent)))
             {
-                throw new InvalidOperationException("Die OneNote-Auswahl uberspannt nicht kompatible Container.");
+                throw new InvalidOperationException("Die OneNote-Auswahl überspannt nicht kompatible Container.");
             }
 
             XElement firstParagraph = paragraphs[0];
@@ -336,9 +373,7 @@ namespace Schnellbausteine.Core
         private static void SetCaretAtStart(XElement paragraph)
         {
             ClearSelection(paragraph.Document);
-            var caret = new XElement(One + "T",
-                new XAttribute("selected", "all"),
-                new XCData(string.Empty));
+            XElement caret = CreateCaretText();
             XElement metadata = paragraph.Elements()
                 .TakeWhile(IsParagraphMetadata)
                 .LastOrDefault();
@@ -350,10 +385,24 @@ namespace Schnellbausteine.Core
         {
             ClearSelection(element.Document);
             var caret = new XElement(One + "OE",
-                new XElement(One + "T",
-                    new XAttribute("selected", "all"),
-                    new XCData(string.Empty)));
+                CreateCaretText());
             element.AddAfterSelf(caret);
+        }
+
+        private static XElement CreateCaretText()
+        {
+            return new XElement(One + "T",
+                new XAttribute("selected", "all"),
+                new XCData(string.Empty));
+        }
+
+        private static OneNoteInsertionResult CompleteInsertion(
+            XDocument page,
+            OneNoteSelectionInfo selection,
+            string strategy)
+        {
+            ValidatePostInsertCaret(page);
+            return new OneNoteInsertionResult(selection, strategy);
         }
 
         private static void ClearSelection(XDocument document)
@@ -381,7 +430,7 @@ namespace Schnellbausteine.Core
             string scope = "Missing";
             string containerScope = "Page";
             bool usable = false;
-            string problem = "OneNote hat die Cursor- oder Auswahlmarkierung verloren. Es wurde nichts eingefugt.";
+            string problem = "OneNote hat die Cursor- oder Auswahlmarkierung verloren. Es wurde nichts eingefügt.";
 
             if (markers.Count > 0)
             {
@@ -402,7 +451,7 @@ namespace Schnellbausteine.Core
                 if (outlines.Count != 1 || outlines[0] == null)
                 {
                     scope = "Ambiguous";
-                    problem = "Die OneNote-Auswahl uberspannt mehrere oder unbekannte Outlines. Es wurde nichts eingefugt.";
+                    problem = "Die OneNote-Auswahl überspannt mehrere oder unbekannte Outlines. Es wurde nichts eingefügt.";
                 }
                 else if (markers.Any(marker => marker.Name == One + "Cell"))
                 {
@@ -416,13 +465,13 @@ namespace Schnellbausteine.Core
                     else
                     {
                         scope = "Ambiguous";
-                        problem = "Mehrere Tabellenzellen oder gemischte Zellinhalte sind als Einfugeanker mehrdeutig.";
+                        problem = "Mehrere Tabellenzellen oder gemischte Zellinhalte sind als Einfügeanker mehrdeutig.";
                     }
                 }
                 else if (markers.Any(marker => marker.Name != One + "T" && IsPartial(marker)))
                 {
                     scope = "Ambiguous";
-                    problem = "OneNote meldet nur einen unvollstandigen Blockanker ohne prazise Nachfahrmarkierung.";
+                    problem = "OneNote meldet nur einen unvollständigen Blockanker ohne präzise Nachfahrmarkierung.";
                 }
                 else if (markers.All(marker => marker.Name == One + "T"))
                 {
@@ -430,7 +479,7 @@ namespace Schnellbausteine.Core
                     if (allEmpty && markers.Count > 1)
                     {
                         scope = "Ambiguous";
-                        problem = "OneNote meldet mehrere leere Textcursor. Es wurde nichts eingefugt.";
+                        problem = "OneNote meldet mehrere leere Textcursor. Es wurde nichts eingefügt.";
                     }
                     else if (markers.Any(marker => GetContainingParagraph(marker) == null))
                     {
@@ -449,7 +498,7 @@ namespace Schnellbausteine.Core
                         usable = HasCompatibleParagraphRange(markers);
                         problem = usable
                             ? null
-                            : "Die Textauswahl uberspannt nicht kompatible Absatzcontainer.";
+                            : "Die Textauswahl überspannt nicht kompatible Absatzcontainer.";
                     }
                 }
                 else if (markers.All(marker => GetContainingParagraph(marker) != null))
@@ -458,12 +507,12 @@ namespace Schnellbausteine.Core
                     usable = HasCompatibleParagraphRange(markers);
                     problem = usable
                         ? null
-                        : "Die Blockauswahl uberspannt nicht kompatible Absatzcontainer.";
+                        : "Die Blockauswahl überspannt nicht kompatible Absatzcontainer.";
                 }
                 else
                 {
                     scope = "Ambiguous";
-                    problem = "Die OneNote-Auswahl besitzt keinen unterstutzten Einfugeanker.";
+                    problem = "Die OneNote-Auswahl besitzt keinen unterstützten Einfügeanker.";
                 }
             }
 
@@ -765,6 +814,7 @@ namespace Schnellbausteine.Core
         {
             if (incoming.Count != 1 || incoming[0].Name != One + "OE") return false;
             return !incoming[0].Attributes().Any(attribute => !attribute.IsNamespaceDeclaration) &&
+                incoming[0].Elements(One + "T").Any() &&
                 incoming[0].Elements().All(element => element.Name == One + "T");
         }
 
@@ -784,11 +834,11 @@ namespace Schnellbausteine.Core
                 string callback = (string)image.Attribute("callbackID");
                 if (string.IsNullOrWhiteSpace(callback))
                 {
-                    throw new InvalidOperationException("Ein Bild enthalt weder Data noch callbackID.");
+                    throw new InvalidOperationException("Ein Bild enthält weder Data noch callbackID.");
                 }
-                if (binaryResolver == null) throw new InvalidOperationException("Fur ein Callback-Bild ist kein Binardatenleser verfugbar.");
+                if (binaryResolver == null) throw new InvalidOperationException("Für ein Callback-Bild ist kein Binärdatenleser verfügbar.");
                 string data = binaryResolver(callback);
-                if (string.IsNullOrWhiteSpace(data)) throw new InvalidOperationException("OneNote lieferte keine Binardaten fur Bild " + callback + ".");
+                if (string.IsNullOrWhiteSpace(data)) throw new InvalidOperationException("OneNote lieferte keine Binärdaten für Bild " + callback + ".");
                 image.Add(new XElement(One + "Data", data));
                 XAttribute callbackAttribute = image.Attribute("callbackID");
                 if (callbackAttribute != null) callbackAttribute.Remove();
@@ -900,7 +950,7 @@ namespace Schnellbausteine.Core
             var processingInstruction = node as XProcessingInstruction;
             if (processingInstruction != null)
                 return new XProcessingInstruction(processingInstruction.Target, processingInstruction.Data);
-            throw new InvalidOperationException("Nicht unterstutzter XML-Knotentyp: " + node.NodeType);
+            throw new InvalidOperationException("Nicht unterstützter XML-Knotentyp: " + node.NodeType);
         }
 
         private static void CopyFormattingAttributes(XElement source, XElement target)
