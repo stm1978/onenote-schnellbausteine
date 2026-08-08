@@ -30,6 +30,8 @@ namespace Schnellbausteine.Tests
                 Type type = assembly.GetType("Schnellbausteine.AddIn.AddIn", true);
                 Type clientType = assembly.GetType(
                     "Schnellbausteine.AddIn.OneNoteClient", true);
+                Type nameDialogType = assembly.GetType(
+                    "Schnellbausteine.AddIn.NameDialog", true);
                 FieldInfo applicationField = clientType.GetField(
                     "application", BindingFlags.Instance | BindingFlags.NonPublic);
                 FieldInfo dispatcherField = type.GetField(
@@ -42,6 +44,13 @@ namespace Schnellbausteine.Tests
                     "DispatchUserAction", BindingFlags.Instance | BindingFlags.NonPublic);
                 MethodInfo selectionMethod = type.GetMethod(
                     "HasCurrentSelection", BindingFlags.Instance | BindingFlags.NonPublic);
+                MethodInfo saveSelectionMethod = type.GetMethod("SaveSelection");
+                ConstructorInfo[] forbiddenCallbackConstructors =
+                    clientType.GetConstructors(
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                    .Concat(nameDialogType.GetConstructors(
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+                    .ToArray();
                 bool hasDynamicCallSites = assembly.GetTypes()
                     .SelectMany(candidate => candidate.GetFields(
                         BindingFlags.Public | BindingFlags.NonPublic |
@@ -97,7 +106,9 @@ namespace Schnellbausteine.Tests
                     !dispatcherWorks ||
                     !callbackHarnessWorks ||
                     dispatchMethod == null ||
-                    !CallsMethod(type.GetMethod("SaveSelection"), dispatchMethod) ||
+                    !CallsMember(saveSelectionMethod, dispatchMethod) ||
+                    forbiddenCallbackConstructors.Any(
+                        constructor => CallsMember(saveSelectionMethod, constructor)) ||
                     !CallsMethod(type.GetMethod("InsertSnippet"), dispatchMethod) ||
                     !CallsMethod(type.GetMethod("ManageSnippets"), dispatchMethod) ||
                     hasDynamicCallSites ||
@@ -151,6 +162,11 @@ namespace Schnellbausteine.Tests
         }
 
         private static bool CallsMethod(MethodInfo caller, MethodInfo called)
+        {
+            return CallsMember(caller, called);
+        }
+
+        private static bool CallsMember(MethodInfo caller, MethodBase called)
         {
             byte[] body = caller.GetMethodBody().GetILAsByteArray();
             byte[] token = BitConverter.GetBytes(called.MetadataToken);
@@ -215,12 +231,15 @@ namespace Schnellbausteine.Tests
         {
             var actionCompleted = new ManualResetEvent(false);
             ApartmentState apartment = ApartmentState.Unknown;
-            int callingThreadId = Thread.CurrentThread.ManagedThreadId;
-            int dispatchedThreadId = callingThreadId;
+            int callbackThreadId = 0;
+            int dispatchedThreadId = 0;
             bool callbackReturned = false;
             bool actionStartedBeforeReturn = false;
             bool result = false;
             bool shutdown = false;
+            bool callbackFinished = false;
+            var callbackDuration = new Stopwatch();
+            Exception callbackException = null;
             try
             {
                 saveSelectionActionField.SetValue(addIn, new Action<IntPtr>(delegate
@@ -230,17 +249,40 @@ namespace Schnellbausteine.Tests
                     dispatchedThreadId = Thread.CurrentThread.ManagedThreadId;
                     actionCompleted.Set();
                 }));
-                addIn.GetType().GetMethod("SaveSelection").Invoke(
-                    addIn, new object[] { null });
-                Volatile.Write(ref callbackReturned, true);
+                var callbackThread = new Thread(new ThreadStart(delegate
+                {
+                    callbackThreadId = Thread.CurrentThread.ManagedThreadId;
+                    try
+                    {
+                        callbackDuration.Start();
+                        addIn.GetType().GetMethod("SaveSelection").Invoke(
+                            addIn, new object[] { null });
+                    }
+                    catch (Exception exception)
+                    {
+                        callbackException = exception;
+                    }
+                    finally
+                    {
+                        callbackDuration.Stop();
+                        Volatile.Write(ref callbackReturned, true);
+                    }
+                }));
+                callbackThread.IsBackground = true;
+                callbackThread.SetApartmentState(ApartmentState.MTA);
+                callbackThread.Start();
+                if (!callbackThread.Join(TimeSpan.FromSeconds(2))) return false;
+                callbackFinished = true;
                 result = actionCompleted.WaitOne(TimeSpan.FromSeconds(5)) &&
+                    callbackException == null &&
                     !actionStartedBeforeReturn &&
+                    callbackDuration.Elapsed < TimeSpan.FromSeconds(2) &&
                     apartment == ApartmentState.STA &&
-                    dispatchedThreadId != callingThreadId;
+                    dispatchedThreadId != callbackThreadId;
             }
             finally
             {
-                actionCompleted.Dispose();
+                if (callbackFinished) actionCompleted.Dispose();
                 FieldInfo dispatcherField = addIn.GetType().GetField(
                     "dispatcher", BindingFlags.Instance | BindingFlags.NonPublic);
                 object dispatcher = dispatcherField.GetValue(addIn);
