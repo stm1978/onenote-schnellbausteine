@@ -216,39 +216,20 @@ namespace Schnellbausteine.AddIn
                 IntPtr ownerHandle = oneNote.CurrentWindowHandle;
                 var owner = new WindowHandleOwner(
                     ownerHandle == IntPtr.Zero ? fallbackOwnerHandle : ownerHandle);
-                using (var dialog = new InsertDialog(repository.GetAll()))
-                {
-                    Log.Trace("ui.InsertDialog", "before");
-                    DialogResult result = dialog.ShowDialog(owner);
-                    Log.Trace("ui.InsertDialog", "after-" + result);
-                    if (result != DialogResult.OK) return;
-                    Snippet snippet = dialog.SelectedSnippet;
-                    if (snippet == null)
-                    {
-                        throw new InvalidOperationException("Es wurde kein Schnellbaustein ausgewählt.");
-                    }
-
-                    Log.Trace("repository.load", "before");
-                    XDocument fragment = repository.LoadFragment(snippet.Id);
-                    Log.Trace("repository.load", "after");
-                    Log.Trace("onenote.xml.insert", "before");
-                    OneNoteInsertionResult insertion =
-                        OneNoteXml.InsertAtSelection(anchoredPage, fragment);
-                    Log.Diagnostic("onenote.insert.anchor", insertion.ToDiagnosticString());
-                    Log.Trace("onenote.xml.insert", "after");
-                    try
-                    {
-                        oneNote.UpdateCurrentPageAndRestoreFocus(anchoredPage);
-                    }
-                    catch (OneNoteFocusException exception)
+                InsertSnippetOperation.Execute(
+                    oneNote,
+                    anchoredPage,
+                    owner,
+                    delegate { return new InsertDialog(repository.GetAll()); },
+                    repository.LoadFragment,
+                    delegate(OneNoteFocusException exception)
                     {
                         const string message =
                             "Der Schnellbaustein wurde eingefügt, aber OneNote konnte nicht erneut fokussiert werden.";
                         Log.Error(message, exception);
                         MessageBox.Show(owner, message, "Schnellbausteine",
                             MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    }
-                }
+                    });
             }
             Log.Trace("command.InsertSnippet", "exit");
         }

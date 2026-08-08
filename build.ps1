@@ -76,7 +76,7 @@ $addInSmokeSource = Join-Path $root "tests\AddInSmoke.cs"
 if ($LASTEXITCODE -ne 0) { throw "Add-in-Smoke-Test-Kompilierung fehlgeschlagen." }
 
 $oneNoteClientHarnessSource = Join-Path $root "tests\OneNoteClientHarness.cs"
-& $csc @common /target:exe /platform:$Platform /out:"$output\Schnellbausteine.OneNoteClientHarness.exe" /r:"$output\Schnellbausteine.Core.dll" /r:"$output\Schnellbausteine.AddIn.dll" /r:System.Xml.Linq.dll $oneNoteClientHarnessSource
+& $csc @common /target:exe /platform:$Platform /out:"$output\Schnellbausteine.OneNoteClientHarness.exe" /r:"$output\Schnellbausteine.Core.dll" /r:"$output\Schnellbausteine.AddIn.dll" /r:System.Xml.Linq.dll /r:System.Windows.Forms.dll $oneNoteClientHarnessSource
 if ($LASTEXITCODE -ne 0) { throw "OneNote-Client-Harness-Kompilierung fehlgeschlagen." }
 
 Write-Host "Build erfolgreich: $output"
