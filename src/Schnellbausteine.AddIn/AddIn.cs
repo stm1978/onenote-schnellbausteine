@@ -486,6 +486,7 @@ namespace Schnellbausteine.AddIn
             "http://schemas.microsoft.com/office/2009/07/customui";
         private const string EmptyLabel = "Keine Schnellbausteine gespeichert";
         private const string ExpiredLabel = "Aktuelle Version herunterladen...";
+        private const string ManageLabel = "Schnellbausteine verwalten";
         private readonly SnippetRepository repository;
         private readonly object gate = new object();
         private readonly IDictionary<string, IDictionary<string, Snippet>> snapshots =
@@ -543,7 +544,7 @@ namespace Schnellbausteine.AddIn
                     new XElement(
                         Ribbon + "button",
                         new XAttribute("id", "sqManage_" + generation),
-                        new XAttribute("label", "OneNote Schnellbausteine verwalten"),
+                        new XAttribute("label", ManageLabel),
                         new XAttribute("onAction", "ManageSnippets")));
                 snapshots[menuControlId] = nextSnapshot;
                 valid = true;

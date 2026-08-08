@@ -68,7 +68,7 @@ oder Deinstallation weder gelöscht noch verändert.
 3. Im Register **Einfügen** in der Gruppe **Malter365.de** auf
    **Schnellbausteine** klicken und den gewünschten,
    alphabetisch sortierten direkten nativen Office-Menüeintrag wählen. Unter der
-   nativen Trennlinie öffnet **OneNote Schnellbausteine verwalten** die bestehende
+   nativen Trennlinie öffnet **Schnellbausteine verwalten** die bestehende
    Verwaltung zum Umbenennen oder Löschen nach Bestätigung.
 
 Beim Einfügen ersetzt ein Baustein markierten Text wie in Word. Reine
@@ -251,7 +251,7 @@ oder Fachdialogzugriffe stattfinden.
    prüfen.
 2. Den Test in einem zweiten Outline wiederholen und bestätigen, dass niemals in
    das erste Outline oder eine andere Position eingefügt wird.
-3. **OneNote Schnellbausteine verwalten** öffnen, Bausteine umbenennen und löschen sowie
+3. **Schnellbausteine verwalten** öffnen, Bausteine umbenennen und löschen sowie
    einen neuen Baustein speichern; nach jedem CRUD-Vorgang die aktualisierte,
    alphabetischen Menüeinträge und den deaktivierten Leerzustand prüfen.
 4. Ganze Tabelle, vollständige Zeilen, vollständige Spalten und einen
