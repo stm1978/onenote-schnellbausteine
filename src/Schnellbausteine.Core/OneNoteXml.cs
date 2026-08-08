@@ -78,6 +78,19 @@ namespace Schnellbausteine.Core
             public XElement Outline;
         }
 
+        private sealed class CaptureContext
+        {
+            public List<XElement> Roots;
+            public XElement Outline;
+            public bool PruneRoots;
+        }
+
+        private sealed class MixedCaptureItem
+        {
+            public XElement Source;
+            public XElement Root;
+        }
+
         public static bool HasSelection(XDocument page)
         {
             if (page == null) throw new ArgumentNullException("page");
@@ -91,44 +104,19 @@ namespace Schnellbausteine.Core
         public static XDocument ExtractSelection(XDocument page, Func<string, string> binaryResolver)
         {
             if (page == null) throw new ArgumentNullException("page");
-            SelectionContext selection = CreateSelectionContext(page);
-            if (!selection.Info.IsUsable)
-            {
-                throw new InvalidOperationException(selection.Info.Problem);
-            }
             if (!HasSelection(page)) throw new InvalidOperationException("OneNote meldet keine markierte Auswahl.");
-            List<XElement> selected = selection.Markers;
-
-            var roots = new List<XElement>();
-            foreach (XElement marker in selected)
-            {
-                XElement candidate = marker.Name == One + "OE" ? marker : marker.Ancestors(One + "OE").FirstOrDefault();
-                if (candidate == null) continue;
-
-                XElement richAncestor = marker.Ancestors().FirstOrDefault(element =>
-                    element.Name == One + "Table" || element.Name == One + "Image");
-                if (richAncestor != null)
-                {
-                    candidate = richAncestor.Ancestors(One + "OE").FirstOrDefault() ?? candidate;
-                }
-
-                if (!roots.Any(root => ReferenceEquals(root, candidate)) &&
-                    !roots.Any(root => candidate.Ancestors().Any(ancestor => ReferenceEquals(ancestor, root))))
-                {
-                    roots.RemoveAll(root => root.Ancestors().Any(ancestor => ReferenceEquals(ancestor, candidate)));
-                    roots.Add(candidate);
-                }
-            }
-
-            if (roots.Count == 0) throw new InvalidOperationException("Die OneNote-Auswahl enthält keinen speicherbaren Inhalt.");
+            CaptureContext capture = CreateCaptureContext(page);
 
             var content = new XElement(Snippet + "Content");
-            foreach (XElement root in roots)
+            foreach (XElement root in capture.Roots)
             {
                 XElement clone = new XElement(root);
-                PruneUnselectedContent(clone, false);
+                if (capture.PruneRoots)
+                {
+                    PruneUnselectedContent(clone, false);
+                }
                 RemoveTransientAttributes(clone);
-                ResolveImageData(clone, binaryResolver);
+                ResolveBinaryData(clone, binaryResolver);
                 content.Add(clone);
             }
 
@@ -172,13 +160,464 @@ namespace Schnellbausteine.Core
             var snippet = new XElement(Snippet + "Snippet",
                 new XAttribute("version", "1"));
             double minimumWidth;
-            if (TryDeriveMinimumWidth(selection.Outline, content, out minimumWidth))
+            if (TryDeriveMinimumWidth(capture.Outline, content, out minimumWidth))
             {
                 snippet.Add(new XElement(Snippet + "Geometry",
                     new XAttribute("minWidth", FormatWidth(minimumWidth))));
             }
             snippet.Add(definitions, quickStyles, content);
             return new XDocument(snippet);
+        }
+
+        private static CaptureContext CreateCaptureContext(XDocument page)
+        {
+            List<XElement> rawMarkers = page.Descendants().Where(IsSelected).ToList();
+            List<XElement> selectedInk = page.Descendants(One + "InkDrawing")
+                .Where(ink =>
+                    IsSelected(ink) ||
+                    ink.Descendants().Any(IsSelected) ||
+                    ink.Ancestors().Any(IsFullySelected))
+                .ToList();
+            if (selectedInk.Count > 0)
+            {
+                List<XElement> effectiveMarkers = GetEffectiveCaptureMarkers(rawMarkers);
+                bool containsOtherContent = effectiveMarkers.Any(marker =>
+                    !selectedInk.Any(ink => IsWithin(marker, ink)));
+                return containsOtherContent
+                    ? CreateMixedCaptureContext(rawMarkers, effectiveMarkers, selectedInk)
+                    : CreateInkCaptureContext(rawMarkers, selectedInk);
+            }
+
+            List<XElement> structuralTables = FindSelectedTables(rawMarkers);
+            if (structuralTables.Count > 0)
+            {
+                return CreateTableCaptureContext(rawMarkers, structuralTables);
+            }
+
+            return CreateContentCaptureContext(rawMarkers);
+        }
+
+        private static CaptureContext CreateInkCaptureContext(
+            IList<XElement> rawMarkers,
+            IList<XElement> selectedInk)
+        {
+            ValidateSelectedInk(selectedInk);
+            if (rawMarkers.Any(marker =>
+                !selectedInk.Any(ink => IsRelatedSelectionMarker(marker, ink))))
+            {
+                throw new InvalidOperationException(
+                    "Freihand und andere Inhalte können nicht gemeinsam als Schnellbaustein gespeichert werden.");
+            }
+
+            List<XElement> orderedInk = selectedInk
+                .OrderBy(ink => ink, XNode.DocumentOrderComparer)
+                .ToList();
+            return new CaptureContext
+            {
+                Roots = orderedInk.Select(CreateInkRoot).ToList(),
+                Outline = GetSingleOutlineOrNull(orderedInk),
+                PruneRoots = false
+            };
+        }
+
+        private static CaptureContext CreateMixedCaptureContext(
+            IList<XElement> rawMarkers,
+            IList<XElement> effectiveMarkers,
+            IList<XElement> selectedInk)
+        {
+            ValidateSelectedInk(selectedInk);
+
+            List<XElement> structuralTables = FindSelectedTables(rawMarkers);
+            if (structuralTables.Count > 1)
+            {
+                throw new InvalidOperationException(
+                    "Gemischte Auswahlen mit mehreren Tabellen sind nicht eindeutig genug.");
+            }
+
+            XElement table = structuralTables.SingleOrDefault();
+            if (table != null) ValidateTableSelectionMarkers(table, rawMarkers);
+
+            List<XElement> contentMarkers = effectiveMarkers
+                .Where(marker => !selectedInk.Any(ink => IsWithin(marker, ink)))
+                .Where(marker => table == null || !IsWithin(marker, table))
+                .ToList();
+            if (contentMarkers.Any(marker =>
+                marker.Name != One + "T" && IsPartial(marker)))
+            {
+                throw new InvalidOperationException(
+                    "Gemischte Inhalte enthalten einen unvollständigen Block ohne präzise Nachfahrmarkierung.");
+            }
+            List<XElement> contentRoots = contentMarkers.Count == 0
+                ? new List<XElement>()
+                : BuildContentCaptureRoots(contentMarkers);
+            if (contentRoots.Any(root =>
+                selectedInk.Any(ink => IsWithin(ink, root)) ||
+                table != null && IsWithin(table, root)))
+            {
+                throw new InvalidOperationException(
+                    "Freihand und andere Inhalte besitzen überlappende Auswahlwurzeln.");
+            }
+
+            var items = new List<MixedCaptureItem>();
+            foreach (XElement root in contentRoots)
+            {
+                XElement clone = new XElement(root);
+                PruneUnselectedContent(clone, false);
+                if (!clone.DescendantsAndSelf().Any(IsSelected) ||
+                    !clone.DescendantsAndSelf().Any(IsContentElement))
+                {
+                    throw new InvalidOperationException(
+                        "Ein gemischter Inhaltsblock enthält keinen eindeutig ausgewählten Inhalt.");
+                }
+                items.Add(new MixedCaptureItem { Source = root, Root = clone });
+            }
+            if (table != null)
+            {
+                items.Add(new MixedCaptureItem
+                {
+                    Source = table,
+                    Root = new XElement(One + "OE", ExtractSelectedTableRectangle(table))
+                });
+            }
+            foreach (XElement ink in selectedInk)
+            {
+                items.Add(new MixedCaptureItem { Source = ink, Root = CreateInkRoot(ink) });
+            }
+
+            if (!items.Any(item => item.Root.DescendantsAndSelf(One + "InkDrawing").Any()) ||
+                !items.Any(item => !item.Root.DescendantsAndSelf(One + "InkDrawing").Any()))
+            {
+                throw new InvalidOperationException(
+                    "Die gemischte Auswahl enthält keine eindeutigen Ink- und Inhaltswurzeln.");
+            }
+
+            List<MixedCaptureItem> ordered = items
+                .OrderBy(item => item.Source, XNode.DocumentOrderComparer)
+                .ToList();
+            return new CaptureContext
+            {
+                Roots = ordered.Select(item => item.Root).ToList(),
+                Outline = GetSingleOutlineOrNull(ordered.Select(item => item.Source)),
+                PruneRoots = false
+            };
+        }
+
+        private static void ValidateSelectedInk(IList<XElement> selectedInk)
+        {
+            if (selectedInk.Count == 0 ||
+                selectedInk.Any(ink => !IsFullySelected(ink)))
+            {
+                throw new InvalidOperationException(
+                    "Die Freihandauswahl enthält keinen vollständig gelieferten InkDrawing-Binärblob.");
+            }
+            if (selectedInk.Any(ink => ink.Ancestors().Any(IsFullySelected)))
+            {
+                throw new InvalidOperationException(
+                    "Eine vollständig markierte übergeordnete Seitenstruktur ist für Freihand nicht eindeutig.");
+            }
+            if (selectedInk.Any(ink => selectedInk.Any(other =>
+                !ReferenceEquals(ink, other) && IsWithin(ink, other))))
+            {
+                throw new InvalidOperationException(
+                    "Die Freihandauswahl besitzt überlappende InkDrawing-Wurzeln.");
+            }
+        }
+
+        private static List<XElement> FindSelectedTables(
+            IEnumerable<XElement> rawMarkers)
+        {
+            return rawMarkers
+                .SelectMany(marker => IsFullySelected(marker)
+                    ? marker.DescendantsAndSelf(One + "Table")
+                    : marker.AncestorsAndSelf(One + "Table"))
+                .Where(table =>
+                    table.AncestorsAndSelf().Any(IsFullySelected) ||
+                    table.Descendants(One + "Row").Any(IsFullySelected) ||
+                    table.Descendants(One + "Cell").Any(IsFullySelected))
+                .Distinct()
+                .ToList();
+        }
+
+        private static XElement CreateInkRoot(XElement ink)
+        {
+            XElement clone = new XElement(ink);
+            foreach (XElement position in clone.DescendantsAndSelf(One + "Position").ToList())
+            {
+                position.Remove();
+            }
+            return new XElement(One + "OE", clone);
+        }
+
+        private static CaptureContext CreateTableCaptureContext(
+            IList<XElement> rawMarkers,
+            IList<XElement> structuralTables)
+        {
+            if (structuralTables.Count != 1)
+            {
+                throw new InvalidOperationException(
+                    "Eine Auswahl aus mehreren Tabellen kann nicht als Schnellbaustein gespeichert werden.");
+            }
+
+            XElement table = structuralTables[0];
+            if (rawMarkers.Any(marker => !IsRelatedSelectionMarker(marker, table)))
+            {
+                throw new InvalidOperationException(
+                    "Tabellen und externe Inhalte können nicht gemeinsam als Schnellbaustein gespeichert werden.");
+            }
+            ValidateTableSelectionMarkers(table, rawMarkers);
+            foreach (XElement ancestor in table.Ancestors().Where(IsFullySelected))
+            {
+                if (ancestor.Descendants().Any(element =>
+                    !ReferenceEquals(element, table) &&
+                    element.Name != One + "Table" &&
+                    !element.Ancestors().Any(parent => ReferenceEquals(parent, table)) &&
+                    IsContentElement(element)))
+                {
+                    throw new InvalidOperationException(
+                        "Die Auswahl enthält neben der Tabelle weitere Inhalte.");
+                }
+            }
+
+            XElement compactTable = ExtractSelectedTableRectangle(table);
+            XElement outline = table.Ancestors(One + "Outline").FirstOrDefault();
+            return new CaptureContext
+            {
+                Roots = new List<XElement> { new XElement(One + "OE", compactTable) },
+                Outline = outline,
+                PruneRoots = false
+            };
+        }
+
+        private static void ValidateTableSelectionMarkers(
+            XElement table,
+            IList<XElement> rawMarkers)
+        {
+            List<XElement> selectedCells = table.Descendants(One + "Cell")
+                .Where(cell =>
+                    IsFullySelected(cell) ||
+                    cell.Ancestors().Any(ancestor =>
+                        ReferenceEquals(ancestor, table) && IsFullySelected(ancestor) ||
+                        ancestor.Name == One + "Row" && IsFullySelected(ancestor)))
+                .ToList();
+            if (rawMarkers.Any(marker =>
+                marker.Ancestors().Any(ancestor => ReferenceEquals(ancestor, table)) &&
+                !selectedCells.Any(cell => IsRelatedSelectionMarker(marker, cell))))
+            {
+                throw new InvalidOperationException(
+                    "Die Tabellenmarkierung enthält zusätzliche Teilinhalte außerhalb des vollständigen Zellbereichs.");
+            }
+        }
+
+        private static XElement ExtractSelectedTableRectangle(XElement table)
+        {
+            if (IsFullySelected(table)) return new XElement(table);
+
+            List<XElement> rows = table.Elements(One + "Row").ToList();
+            if (rows.Count == 0)
+            {
+                throw new InvalidOperationException("Die ausgewählte Tabelle enthält keine Zeilen.");
+            }
+            List<List<XElement>> cells = rows
+                .Select(row => row.Elements(One + "Cell").ToList())
+                .ToList();
+            int columnCount = cells[0].Count;
+            if (columnCount == 0 || cells.Any(row => row.Count != columnCount))
+            {
+                throw new InvalidOperationException(
+                    "Die ausgewählte Tabelle besitzt keine eindeutige rechteckige Zellstruktur.");
+            }
+
+            var selectedCoordinates = new List<Tuple<int, int>>();
+            for (int rowIndex = 0; rowIndex < rows.Count; rowIndex++)
+            {
+                bool wholeRow = IsFullySelected(rows[rowIndex]) || IsFullySelected(table);
+                for (int columnIndex = 0; columnIndex < columnCount; columnIndex++)
+                {
+                    if (wholeRow || IsFullySelected(cells[rowIndex][columnIndex]))
+                    {
+                        selectedCoordinates.Add(Tuple.Create(rowIndex, columnIndex));
+                    }
+                }
+            }
+            if (selectedCoordinates.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "Die Tabellenmarkierung enthält keine vollständig ausgewählten Zellen.");
+            }
+
+            int firstRow = selectedCoordinates.Min(item => item.Item1);
+            int lastRow = selectedCoordinates.Max(item => item.Item1);
+            int firstColumn = selectedCoordinates.Min(item => item.Item2);
+            int lastColumn = selectedCoordinates.Max(item => item.Item2);
+            int expectedCount = (lastRow - firstRow + 1) * (lastColumn - firstColumn + 1);
+            if (selectedCoordinates.Count != expectedCount)
+            {
+                throw new InvalidOperationException(
+                    "Nicht rechteckige Tabellenbereiche können nicht als Schnellbaustein gespeichert werden.");
+            }
+
+            var result = new XElement(table.Name);
+            foreach (XAttribute attribute in table.Attributes().Where(attribute =>
+                !attribute.IsNamespaceDeclaration &&
+                attribute.Name.LocalName != "selected"))
+            {
+                result.Add(new XAttribute(attribute));
+            }
+
+            XElement sourceColumns = table.Element(One + "Columns");
+            if (sourceColumns != null)
+            {
+                var columns = new XElement(sourceColumns.Name);
+                foreach (XAttribute attribute in sourceColumns.Attributes())
+                {
+                    columns.Add(new XAttribute(attribute));
+                }
+                List<XElement> sourceColumnList = sourceColumns.Elements(One + "Column").ToList();
+                if (sourceColumnList.Count != columnCount)
+                {
+                    throw new InvalidOperationException(
+                        "Die Spaltendefinitionen stimmen nicht mit der Zellstruktur überein.");
+                }
+                for (int columnIndex = firstColumn; columnIndex <= lastColumn; columnIndex++)
+                {
+                    XElement column = new XElement(sourceColumnList[columnIndex]);
+                    column.SetAttributeValue("index", columnIndex - firstColumn);
+                    columns.Add(column);
+                }
+                result.Add(columns);
+            }
+
+            foreach (XElement metadata in table.Elements().Where(element =>
+                element.Name != One + "Columns" && element.Name != One + "Row"))
+            {
+                result.Add(new XElement(metadata));
+            }
+            for (int rowIndex = firstRow; rowIndex <= lastRow; rowIndex++)
+            {
+                XElement row = new XElement(rows[rowIndex]);
+                row.Elements(One + "Cell").Remove();
+                foreach (XElement cell in cells[rowIndex]
+                    .Skip(firstColumn)
+                    .Take(lastColumn - firstColumn + 1))
+                {
+                    row.Add(new XElement(cell));
+                }
+                result.Add(row);
+            }
+            return result;
+        }
+
+        private static CaptureContext CreateContentCaptureContext(IList<XElement> rawMarkers)
+        {
+            List<XElement> markers = GetEffectiveCaptureMarkers(rawMarkers);
+            if (markers.Any(marker => marker.Name != One + "T" && IsPartial(marker)))
+            {
+                throw new InvalidOperationException(
+                    "OneNote meldet nur einen unvollständigen Block ohne präzise Nachfahrmarkierung.");
+            }
+            List<XElement> roots = BuildContentCaptureRoots(markers);
+            List<XElement> outlines = roots
+                .Select(root => root.Ancestors(One + "Outline").FirstOrDefault())
+                .Distinct()
+                .ToList();
+            if (outlines.Count != 1 || outlines[0] == null)
+            {
+                throw new InvalidOperationException(
+                    "Die Auswahl überspannt mehrere oder unbekannte Outlines.");
+            }
+            return new CaptureContext
+            {
+                Roots = roots,
+                Outline = outlines[0],
+                PruneRoots = true
+            };
+        }
+
+        private static List<XElement> GetEffectiveCaptureMarkers(
+            IEnumerable<XElement> rawMarkers)
+        {
+            return rawMarkers
+                .Where(marker => !marker.Ancestors().Any(IsFullySelected))
+                .Where(marker => !(IsPartial(marker) && marker.Descendants().Any(IsSelected)))
+                .ToList();
+        }
+
+        private static List<XElement> BuildContentCaptureRoots(
+            IList<XElement> markers)
+        {
+            var roots = new List<XElement>();
+            foreach (XElement marker in markers)
+            {
+                XElement candidate = marker.Name == One + "OE"
+                    ? marker
+                    : marker.Ancestors(One + "OE").FirstOrDefault();
+                if (candidate == null)
+                {
+                    throw new InvalidOperationException(
+                        "Die Auswahl enthält einen Inhalt ohne eindeutige OE-Wurzel.");
+                }
+
+                XElement richAncestor = marker.Ancestors().FirstOrDefault(element =>
+                    element.Name == One + "Table" || element.Name == One + "Image");
+                if (richAncestor != null)
+                {
+                    candidate = richAncestor.Ancestors(One + "OE").FirstOrDefault() ?? candidate;
+                }
+                AddCaptureRoot(roots, candidate);
+            }
+            if (roots.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "Die OneNote-Auswahl enthält keinen speicherbaren Inhalt.");
+            }
+            return roots;
+        }
+
+        private static void AddCaptureRoot(ICollection<XElement> roots, XElement candidate)
+        {
+            if (roots.Any(root => ReferenceEquals(root, candidate)) ||
+                roots.Any(root => candidate.Ancestors().Any(ancestor => ReferenceEquals(ancestor, root))))
+            {
+                return;
+            }
+            foreach (XElement root in roots
+                .Where(root => root.Ancestors().Any(ancestor => ReferenceEquals(ancestor, candidate)))
+                .ToList())
+            {
+                roots.Remove(root);
+            }
+            roots.Add(candidate);
+        }
+
+        private static bool IsRelatedSelectionMarker(XElement marker, XElement content)
+        {
+            return ReferenceEquals(marker, content) ||
+                marker.Ancestors().Any(ancestor => ReferenceEquals(ancestor, content)) ||
+                content.Ancestors().Any(ancestor => ReferenceEquals(ancestor, marker));
+        }
+
+        private static bool IsWithin(XElement element, XElement root)
+        {
+            return ReferenceEquals(element, root) ||
+                element.Ancestors().Any(ancestor => ReferenceEquals(ancestor, root));
+        }
+
+        private static XElement GetSingleOutlineOrNull(IEnumerable<XElement> elements)
+        {
+            List<XElement> outlines = elements
+                .Select(element => element.AncestorsAndSelf(One + "Outline").FirstOrDefault())
+                .Where(outline => outline != null)
+                .Distinct()
+                .ToList();
+            return outlines.Count == 1 ? outlines[0] : null;
+        }
+
+        private static bool IsContentElement(XElement element)
+        {
+            return element.Name == One + "T" ||
+                element.Name == One + "Image" ||
+                element.Name == One + "InkDrawing" ||
+                element.Name == One + "InsertedFile";
         }
 
         public static OneNoteSelectionInfo AnalyzeSelection(XDocument page)
@@ -206,6 +645,29 @@ namespace Schnellbausteine.Core
 
             List<XElement> incoming = fragment.Root.Element(Snippet + "Content").Elements().Select(element => new XElement(element)).ToList();
             if (incoming.Count == 0) throw new InvalidOperationException("Der Schnellbaustein ist leer.");
+            bool containsInk = incoming
+                .SelectMany(element => element.DescendantsAndSelf(One + "InkDrawing"))
+                .Any();
+            if (containsInk)
+            {
+                bool validInkFragment =
+                    incoming.All(element => element.Name == One + "OE") &&
+                    incoming.Where(element =>
+                        element.DescendantsAndSelf(One + "InkDrawing").Any())
+                        .All(element =>
+                            element.Elements().Count() == 1 &&
+                            element.Elements(One + "InkDrawing").Count() == 1);
+                bool validInkAnchor =
+                    selection.Info.Scope == "TableCell" ||
+                    selection.Info.Scope == "TextCursor" ||
+                    selection.Info.Scope == "TextRange" ||
+                    selection.Info.Scope == "Block";
+                if (!validInkFragment || !validInkAnchor)
+                {
+                    throw new InvalidOperationException(
+                        "Freihandzeichnungen können nur als eindeutige OE-Wurzeln an einem Text- oder Zellanker eingefügt werden.");
+                }
+            }
 
             foreach (XElement element in incoming) RemoveTransientAttributes(element);
             MergeTagDefinitions(page, fragment, incoming);
@@ -886,6 +1348,13 @@ namespace Schnellbausteine.Core
                     minimumWidth = Math.Max(minimumWidth, width);
                 }
             }
+            foreach (XElement ink in content.DescendantsAndSelf(One + "InkDrawing"))
+            {
+                if (TryReadWidth(ink.Element(One + "Size"), out width))
+                {
+                    minimumWidth = Math.Max(minimumWidth, width);
+                }
+            }
             return minimumWidth > 0;
         }
 
@@ -964,23 +1433,53 @@ namespace Schnellbausteine.Core
             size.SetAttributeValue("width", FormatWidth(minimumWidth));
         }
 
-        private static void ResolveImageData(XElement content, Func<string, string> binaryResolver)
+        private static void ResolveBinaryData(XElement content, Func<string, string> binaryResolver)
         {
             foreach (XElement image in content.DescendantsAndSelf(One + "Image"))
             {
-                if (image.Element(One + "Data") != null) continue;
-                string callback = (string)image.Attribute("callbackID");
-                if (string.IsNullOrWhiteSpace(callback))
-                {
-                    throw new InvalidOperationException("Ein Bild enthält weder Data noch callbackID.");
-                }
-                if (binaryResolver == null) throw new InvalidOperationException("Für ein Callback-Bild ist kein Binärdatenleser verfügbar.");
-                string data = binaryResolver(callback);
-                if (string.IsNullOrWhiteSpace(data)) throw new InvalidOperationException("OneNote lieferte keine Binärdaten für Bild " + callback + ".");
-                image.Add(new XElement(One + "Data", data));
-                XAttribute callbackAttribute = image.Attribute("callbackID");
-                if (callbackAttribute != null) callbackAttribute.Remove();
+                ResolveBinaryObject(image, binaryResolver, "Bild");
             }
+            foreach (XElement ink in content.DescendantsAndSelf(One + "InkDrawing"))
+            {
+                XElement file = ink.Element(One + "File");
+                if (file != null) file.Remove();
+                ResolveBinaryObject(ink, binaryResolver, "Freihandzeichnung");
+            }
+        }
+
+        private static void ResolveBinaryObject(
+            XElement element,
+            Func<string, string> binaryResolver,
+            string description)
+        {
+            XElement dataElement = element.Element(One + "Data");
+            if (dataElement != null && !string.IsNullOrWhiteSpace(dataElement.Value))
+            {
+                XAttribute existingCallback = element.Attribute("callbackID");
+                if (existingCallback != null) existingCallback.Remove();
+                return;
+            }
+            if (dataElement != null) dataElement.Remove();
+
+            string callback = (string)element.Attribute("callbackID");
+            if (string.IsNullOrWhiteSpace(callback))
+            {
+                throw new InvalidOperationException(
+                    description + " enthält weder eigenständige Data noch callbackID.");
+            }
+            if (binaryResolver == null)
+            {
+                throw new InvalidOperationException(
+                    "Für " + description + " mit CallbackID ist kein Binärdatenleser verfügbar.");
+            }
+            string data = binaryResolver(callback);
+            if (string.IsNullOrWhiteSpace(data))
+            {
+                throw new InvalidOperationException(
+                    "OneNote lieferte keine Binärdaten für " + description + " " + callback + ".");
+            }
+            element.Add(new XElement(One + "Data", data));
+            element.Attribute("callbackID").Remove();
         }
 
         private static void PruneUnselectedContent(XElement element, bool selectedAncestor)
