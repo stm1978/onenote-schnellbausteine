@@ -221,15 +221,7 @@ namespace Schnellbausteine.AddIn
                     anchoredPage,
                     owner,
                     delegate { return new InsertDialog(repository.GetAll()); },
-                    repository.LoadFragment,
-                    delegate(OneNoteFocusException exception)
-                    {
-                        const string message =
-                            "Der Schnellbaustein wurde eingefügt, aber OneNote konnte nicht erneut fokussiert werden.";
-                        Log.Error(message, exception);
-                        MessageBox.Show(owner, message, "Schnellbausteine",
-                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    });
+                    repository.LoadFragment);
             }
             Log.Trace("command.InsertSnippet", "exit");
         }

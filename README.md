@@ -176,7 +176,8 @@ erfolgreichen Update liest das Add-in die Selection-Metadaten erneut, ermittelt
 die von OneNote vergebene `objectID` des leeren Cursorankers und ruft
 `NavigateTo(pageId, objectId)` auf. Dadurch erhält OneNote ein konkretes
 Editorziel statt nur einer Seitennavigation. Scheitert dieser Fokus-Schritt,
-bleibt der bereits eingefügte Inhalt erhalten und ein Hinweis wird angezeigt.
+bleibt der bereits eingefügte Inhalt erhalten und der Fehler wird protokolliert,
+ohne den erfolgreichen Insert durch einen modalen Hinweis zu blockieren.
 Damit folgt der Einfügepfad wie OneMores öffentlich beschriebenes
 `SelectionRange`-/`PageEditor.InsertOrReplace`-Muster einer expliziten
 Selection-Range statt einer globalen Outline-Suche, ohne OneMore-Code zu
