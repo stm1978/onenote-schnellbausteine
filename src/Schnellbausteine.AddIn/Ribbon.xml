@@ -16,28 +16,28 @@
                    getContent="GetSnippetMenuContent" insertBeforeMso="Cut"/>
       <menuSeparator id="sqContextSeparatorText" insertBeforeMso="Cut"/>
       <button id="sqSaveSelectionText" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery"
-              onAction="SaveSelection" insertBeforeMso="Cut"/>
+              onAction="SaveSelection" getEnabled="GetFeatureEnabled" insertBeforeMso="Cut"/>
     </contextMenu>
     <contextMenu idMso="ContextMenuOutlineElementHandle">
       <dynamicMenu id="sqInsertOutline" label="Schnellbausteine" imageMso="QuickPartsInsertGallery"
                    getContent="GetSnippetMenuContent"/>
       <menuSeparator id="sqContextSeparatorOutline"/>
       <button id="sqSaveSelectionOutline" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery"
-              onAction="SaveSelection"/>
+              onAction="SaveSelection" getEnabled="GetFeatureEnabled"/>
     </contextMenu>
     <contextMenu idMso="ContextMenuInkDrawing">
       <dynamicMenu id="sqInsertInk" label="Schnellbausteine" imageMso="QuickPartsInsertGallery"
                    getContent="GetSnippetMenuContent"/>
       <menuSeparator id="sqContextSeparatorInk"/>
       <button id="sqSaveSelectionInk" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery"
-              onAction="SaveSelection"/>
+              onAction="SaveSelection" getEnabled="GetFeatureEnabled"/>
     </contextMenu>
     <contextMenu idMso="ContextMenuLassoSelection">
       <dynamicMenu id="sqInsertLasso" label="Schnellbausteine" imageMso="QuickPartsInsertGallery"
                    getContent="GetSnippetMenuContent"/>
       <menuSeparator id="sqContextSeparatorLasso"/>
       <button id="sqSaveSelectionLasso" label="Als Schnellbaustein speichern..." imageMso="SaveSelectionToQuickPartGallery"
-              onAction="SaveSelection"/>
+              onAction="SaveSelection" getEnabled="GetFeatureEnabled"/>
     </contextMenu>
   </contextMenus>
 </customUI>
