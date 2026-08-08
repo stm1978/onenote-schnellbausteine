@@ -165,12 +165,6 @@ namespace Schnellbausteine.AddIn
                     "OneNote lieferte nach dem Einfügen keinen eindeutigen Fokusanker.",
                     exception);
             }
-            catch (OneNoteWindowActivationException exception)
-            {
-                throw new OneNoteFocusException(
-                    "Das OneNote-Hauptfenster konnte nach dem Einfügen nicht aktiviert werden.",
-                    exception);
-            }
         }
 
         private string GetCurrentPageId()

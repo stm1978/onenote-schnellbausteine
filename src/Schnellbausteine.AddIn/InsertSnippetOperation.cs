@@ -17,18 +17,13 @@ namespace Schnellbausteine.AddIn
             XDocument anchoredPage,
             IWin32Window owner,
             Func<IInsertSnippetPicker> createPicker,
-            Func<string, XDocument> loadFragment,
-            Action<OneNoteFocusException> reportFocusFailure)
+            Func<string, XDocument> loadFragment)
         {
             if (oneNote == null) throw new ArgumentNullException("oneNote");
             if (anchoredPage == null) throw new ArgumentNullException("anchoredPage");
             if (owner == null) throw new ArgumentNullException("owner");
             if (createPicker == null) throw new ArgumentNullException("createPicker");
             if (loadFragment == null) throw new ArgumentNullException("loadFragment");
-            if (reportFocusFailure == null)
-            {
-                throw new ArgumentNullException("reportFocusFailure");
-            }
 
             Snippet snippet;
             using (IInsertSnippetPicker picker = createPicker())
@@ -62,7 +57,9 @@ namespace Schnellbausteine.AddIn
             }
             catch (OneNoteFocusException exception)
             {
-                reportFocusFailure(exception);
+                Log.Error(
+                    "Der Schnellbaustein wurde eingefügt, aber OneNote konnte nicht erneut fokussiert werden.",
+                    exception);
             }
             return true;
         }

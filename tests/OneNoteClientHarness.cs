@@ -72,12 +72,119 @@ namespace Schnellbausteine.Tests
                 this.calls = calls;
             }
 
-            public OneNoteWindowActivationException Failure;
-
             public void Activate(IntPtr windowHandle)
             {
                 calls.Add("activate:" + windowHandle.ToInt64());
-                if (Failure != null) throw Failure;
+            }
+        }
+
+        private sealed class FakeWindowNative : IOneNoteWindowNative
+        {
+            public readonly List<string> Calls;
+            public IntPtr ForegroundWindow = new IntPtr(200);
+            public IntPtr FocusedWindow = new IntPtr(101);
+            public bool Iconic;
+            public bool SetForegroundResult = true;
+            public bool BringToTopResult = true;
+            public bool RestoreResult = true;
+            public bool ThrowWhenSettingForeground;
+
+            public FakeWindowNative(List<string> calls)
+            {
+                Calls = calls;
+            }
+
+            public bool AttachThreadInput(
+                uint attachThread,
+                uint attachToThread,
+                bool attach)
+            {
+                Calls.Add(
+                    "attach:" + attachThread + ":" + attachToThread + ":" + attach);
+                return true;
+            }
+
+            public bool BringWindowToTop(IntPtr windowHandle)
+            {
+                Calls.Add("bring:" + windowHandle.ToInt64());
+                return BringToTopResult;
+            }
+
+            public uint GetCurrentProcessId()
+            {
+                return 1;
+            }
+
+            public uint GetCurrentThreadId()
+            {
+                return 10;
+            }
+
+            public IntPtr GetFocus()
+            {
+                Calls.Add("focus");
+                return FocusedWindow;
+            }
+
+            public IntPtr GetForegroundWindow()
+            {
+                Calls.Add("foreground:" + ForegroundWindow.ToInt64());
+                return ForegroundWindow;
+            }
+
+            public uint GetWindowThreadProcessId(
+                IntPtr windowHandle,
+                out uint processId)
+            {
+                if (windowHandle == new IntPtr(100))
+                {
+                    processId = 3;
+                    return 30;
+                }
+                if (windowHandle == new IntPtr(200))
+                {
+                    processId = 2;
+                    return 20;
+                }
+                processId = 0;
+                return 0;
+            }
+
+            public bool IsChild(IntPtr parentWindow, IntPtr windowHandle)
+            {
+                Calls.Add(
+                    "child:" + parentWindow.ToInt64() + ":" + windowHandle.ToInt64());
+                return parentWindow == new IntPtr(100) &&
+                    windowHandle == new IntPtr(101);
+            }
+
+            public bool IsIconic(IntPtr windowHandle)
+            {
+                Calls.Add("iconic:" + windowHandle.ToInt64());
+                return Iconic;
+            }
+
+            public bool IsWindow(IntPtr windowHandle)
+            {
+                Calls.Add("window:" + windowHandle.ToInt64());
+                return windowHandle == new IntPtr(100);
+            }
+
+            public bool SetForegroundWindow(IntPtr windowHandle)
+            {
+                Calls.Add("set:" + windowHandle.ToInt64());
+                if (ThrowWhenSettingForeground)
+                {
+                    throw new InvalidOperationException("set failed");
+                }
+                if (SetForegroundResult) ForegroundWindow = windowHandle;
+                return SetForegroundResult;
+            }
+
+            public bool ShowWindow(IntPtr windowHandle, int command)
+            {
+                Calls.Add("show:" + windowHandle.ToInt64() + ":" + command);
+                return RestoreResult;
             }
         }
 
@@ -112,12 +219,16 @@ namespace Schnellbausteine.Tests
                 UpdateReadBackNavigateAndActivationAreOrdered();
                 MissingFocusTargetIsReportedAfterUpdate();
                 NavigateFailureIsReportedAfterUpdate();
-                ActivationFailureIsReportedAfterNavigate();
                 UpdateFailureDoesNotAttemptFocus();
                 PickerIsDisposedBeforeUpdateAndFocus();
-                FocusFailureIsReportedWithoutFailingInsert();
+                FocusFailureIsNonModalAndDoesNotFailInsert();
                 CancelledPickerDoesNotUpdate();
-                Console.WriteLine("8/8 OneNote-Client-Harness-Tests erfolgreich.");
+                TargetAlreadyForegroundAcceptsSetForegroundFalse();
+                CurrentForegroundAndTargetThreadsAreAttached();
+                AttachedThreadsAreDetachedInFinally();
+                MinimizedTargetIsRestoredBeforeActivation();
+                RejectedActivationDoesNotFailInsert();
+                Console.WriteLine("12/12 OneNote-Client-Harness-Tests erfolgreich.");
                 return 0;
             }
             catch (Exception exception)
@@ -184,27 +295,6 @@ namespace Schnellbausteine.Tests
                 string.Join(",", calls));
         }
 
-        private static void ActivationFailureIsReportedAfterNavigate()
-        {
-            var calls = new List<string>();
-            var application = new FakeApplication(calls)
-            {
-                RefreshedXml = PageXml("focus-object")
-            };
-            var activator = new FakeWindowActivator(calls)
-            {
-                Failure = new OneNoteWindowActivationException("activation failed")
-            };
-            using (var client = CreateClient(application, activator))
-            {
-                Throws<OneNoteFocusException>(
-                    delegate { client.UpdateCurrentPageAndRestoreFocus(Page()); });
-            }
-            Equal(
-                "update,read:page-id:False:True,navigate:page-id:focus-object,activate:123",
-                string.Join(",", calls));
-        }
-
         private static void UpdateFailureDoesNotAttemptFocus()
         {
             var calls = new List<string>();
@@ -238,8 +328,7 @@ namespace Schnellbausteine.Tests
                     Page(),
                     new WindowHandleOwner(new IntPtr(123)),
                     delegate { return new FakePicker(calls, true); },
-                    delegate { return Fragment(); },
-                    delegate { throw new Exception("Kein Fokusfehler erwartet."); });
+                    delegate { return Fragment(); });
                 Equal(true, inserted);
             }
             Equal(
@@ -248,31 +337,29 @@ namespace Schnellbausteine.Tests
                 string.Join(",", calls));
         }
 
-        private static void FocusFailureIsReportedWithoutFailingInsert()
+        private static void FocusFailureIsNonModalAndDoesNotFailInsert()
         {
             var calls = new List<string>();
             var application = new FakeApplication(calls)
             {
-                RefreshedXml = PageXml("focus-object")
+                RefreshedXml = PageXml("focus-object"),
+                NavigateException = new COMException("navigation failed")
             };
-            var activator = new FakeWindowActivator(calls)
-            {
-                Failure = new OneNoteWindowActivationException("activation failed")
-            };
-            using (var client = CreateClient(application, activator))
+            using (var client = CreateClient(
+                application,
+                new FakeWindowActivator(calls)))
             {
                 bool inserted = InsertSnippetOperation.Execute(
                     client,
                     Page(),
                     new WindowHandleOwner(new IntPtr(123)),
                     delegate { return new FakePicker(calls, true); },
-                    delegate { return Fragment(); },
-                    delegate { calls.Add("focus.reported"); });
+                    delegate { return Fragment(); });
                 Equal(true, inserted);
             }
             Equal(
                 "picker.show,picker.dispose,update,read:page-id:False:True," +
-                "navigate:page-id:focus-object,activate:123,focus.reported",
+                "navigate:page-id:focus-object",
                 string.Join(",", calls));
         }
 
@@ -289,11 +376,116 @@ namespace Schnellbausteine.Tests
                     Page(),
                     new WindowHandleOwner(new IntPtr(123)),
                     delegate { return new FakePicker(calls, false); },
-                    delegate { throw new Exception("Fragment darf nicht geladen werden."); },
-                    delegate { throw new Exception("Kein Fokusfehler erwartet."); });
+                    delegate { throw new Exception("Fragment darf nicht geladen werden."); });
                 Equal(false, inserted);
             }
             Equal("picker.show,picker.dispose", string.Join(",", calls));
+        }
+
+        private static void TargetAlreadyForegroundAcceptsSetForegroundFalse()
+        {
+            var calls = new List<string>();
+            var native = new FakeWindowNative(calls)
+            {
+                ForegroundWindow = new IntPtr(100),
+                SetForegroundResult = false
+            };
+
+            new OneNoteWindowActivator(native).Activate(new IntPtr(100));
+
+            Ordered(
+                calls,
+                "attach:10:30:True",
+                "set:100",
+                "bring:100",
+                "focus",
+                "child:100:101",
+                "attach:10:30:False");
+        }
+
+        private static void CurrentForegroundAndTargetThreadsAreAttached()
+        {
+            var calls = new List<string>();
+            var native = new FakeWindowNative(calls);
+
+            new OneNoteWindowActivator(native).Activate(new IntPtr(100));
+
+            Ordered(
+                calls,
+                "attach:10:20:True",
+                "attach:10:30:True",
+                "set:100",
+                "bring:100",
+                "attach:10:30:False",
+                "attach:10:20:False");
+        }
+
+        private static void AttachedThreadsAreDetachedInFinally()
+        {
+            var calls = new List<string>();
+            var native = new FakeWindowNative(calls)
+            {
+                ThrowWhenSettingForeground = true
+            };
+
+            Throws<InvalidOperationException>(
+                delegate
+                {
+                    new OneNoteWindowActivator(native).Activate(new IntPtr(100));
+                });
+
+            Ordered(
+                calls,
+                "attach:10:20:True",
+                "attach:10:30:True",
+                "set:100",
+                "attach:10:30:False",
+                "attach:10:20:False");
+        }
+
+        private static void MinimizedTargetIsRestoredBeforeActivation()
+        {
+            var calls = new List<string>();
+            var native = new FakeWindowNative(calls)
+            {
+                Iconic = true
+            };
+
+            new OneNoteWindowActivator(native).Activate(new IntPtr(100));
+
+            Ordered(calls, "iconic:100", "show:100:9", "set:100", "bring:100");
+        }
+
+        private static void RejectedActivationDoesNotFailInsert()
+        {
+            var calls = new List<string>();
+            var application = new FakeApplication(calls)
+            {
+                RefreshedXml = PageXml("focus-object")
+            };
+            var native = new FakeWindowNative(calls)
+            {
+                SetForegroundResult = false,
+                BringToTopResult = false,
+                FocusedWindow = IntPtr.Zero
+            };
+            using (var client = new OneNoteClient(
+                application,
+                "page-id",
+                new IntPtr(100),
+                new DateTime(2026, 8, 8, 10, 0, 0, DateTimeKind.Utc),
+                new OneNoteWindowActivator(native)))
+            {
+                bool inserted = InsertSnippetOperation.Execute(
+                    client,
+                    Page(),
+                    new WindowHandleOwner(new IntPtr(100)),
+                    delegate { return new FakePicker(calls, true); },
+                    delegate { return Fragment(); });
+                Equal(true, inserted);
+            }
+            Contains(calls, "set:100");
+            Contains(calls, "bring:100");
         }
 
         private static OneNoteClient CreateClient(
@@ -344,6 +536,29 @@ namespace Schnellbausteine.Tests
             if (!EqualityComparer<T>.Default.Equals(expected, actual))
             {
                 throw new Exception("Erwartet: " + expected + "; tatsächlich: " + actual);
+            }
+        }
+
+        private static void Contains(List<string> values, string expected)
+        {
+            if (!values.Contains(expected))
+            {
+                throw new Exception("Aufruf fehlt: " + expected);
+            }
+        }
+
+        private static void Ordered(List<string> values, params string[] expected)
+        {
+            int index = -1;
+            foreach (string value in expected)
+            {
+                index = values.IndexOf(value, index + 1);
+                if (index < 0)
+                {
+                    throw new Exception(
+                        "Aufruf fehlt oder ist falsch angeordnet: " + value +
+                        "; tatsächlich: " + string.Join(",", values));
+                }
             }
         }
 
