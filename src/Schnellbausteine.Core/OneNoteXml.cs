@@ -191,24 +191,18 @@ namespace Schnellbausteine.Core
             List<XElement> structuralTables = FindSelectedTables(rawMarkers);
             if (structuralTables.Count > 0)
             {
-                // If selection includes table(s) plus other external markers, allow
-                // mixed capture (table + nearby content) by falling through to
-                // content capture. Only treat as exclusive table capture when all
-                // markers are within the same table.
                 if (structuralTables.Count == 1)
                 {
                     XElement table = structuralTables[0];
-                    bool allMarkersWithinTable = rawMarkers.All(marker => marker.AncestorsAndSelf().Any(a => ReferenceEquals(a, table)));
-                    if (allMarkersWithinTable)
+                    bool hasMarkersOutsideTable = rawMarkers.Any(marker => !marker.AncestorsAndSelf(One + "Table").Any(a => ReferenceEquals(a, table)));
+                    if (hasMarkersOutsideTable)
                     {
-                        return CreateTableCaptureContext(rawMarkers, structuralTables);
+                        return CreateTableMixedCaptureContext(rawMarkers, table);
                     }
-                }
-                else
-                {
-                    // multiple structural tables: keep existing behavior
                     return CreateTableCaptureContext(rawMarkers, structuralTables);
                 }
+                // multiple structural tables: keep existing behavior
+                return CreateTableCaptureContext(rawMarkers, structuralTables);
             }
 
             return CreateContentCaptureContext(rawMarkers);
@@ -401,6 +395,55 @@ namespace Schnellbausteine.Core
             {
                 Roots = new List<XElement> { new XElement(One + "OE", compactTable) },
                 Outline = outline,
+                PruneRoots = false
+            };
+        }
+
+        private static CaptureContext CreateTableMixedCaptureContext(
+            IList<XElement> rawMarkers,
+            XElement table)
+        {
+            // Build content roots from markers that are outside the table
+            List<XElement> contentMarkers = GetEffectiveCaptureMarkers(rawMarkers)
+                .Where(marker => !marker.AncestorsAndSelf(One + "Table").Any(a => ReferenceEquals(a, table)))
+                .ToList();
+            if (contentMarkers.Any(marker => marker.Name != One + "T" && IsPartial(marker)))
+            {
+                throw new InvalidOperationException(
+                    "Gemischte Inhalte enthalten einen unvollständigen Block ohne präzise Nachfahrmarkierung.");
+            }
+            List<XElement> contentRoots = contentMarkers.Count == 0
+                ? new List<XElement>()
+                : BuildContentCaptureRoots(contentMarkers);
+
+            var items = new List<MixedCaptureItem>();
+            foreach (XElement root in contentRoots)
+            {
+                XElement clone = new XElement(root);
+                PruneUnselectedContent(clone, false);
+                if (!clone.DescendantsAndSelf().Any(IsSelected) || !clone.DescendantsAndSelf().Any(IsContentElement))
+                {
+                    throw new InvalidOperationException(
+                        "Ein gemischter Inhaltsblock enthält keinen eindeutig ausgewählten Inhalt.");
+                }
+                items.Add(new MixedCaptureItem { Source = root, Root = clone });
+            }
+
+            // Add table as compact rectangle root
+            items.Add(new MixedCaptureItem
+            {
+                Source = table,
+                Root = new XElement(One + "OE", ExtractSelectedTableRectangle(table))
+            });
+
+            List<MixedCaptureItem> ordered = items
+                .OrderBy(item => item.Source, XNode.DocumentOrderComparer)
+                .ToList();
+
+            return new CaptureContext
+            {
+                Roots = ordered.Select(item => item.Root).ToList(),
+                Outline = GetSingleOutlineOrNull(ordered.Select(item => item.Source)),
                 PruneRoots = false
             };
         }
