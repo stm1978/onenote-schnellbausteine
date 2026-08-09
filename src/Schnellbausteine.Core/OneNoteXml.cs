@@ -403,6 +403,21 @@ namespace Schnellbausteine.Core
             IList<XElement> rawMarkers,
             XElement table)
         {
+            // Validate table selection markers similar to exclusive table capture
+            ValidateTableSelectionMarkers(table, rawMarkers);
+            foreach (XElement ancestor in table.Ancestors().Where(IsFullySelected))
+            {
+                if (ancestor.Descendants().Any(element =>
+                    !ReferenceEquals(element, table) &&
+                    element.Name != One + "Table" &&
+                    !element.Ancestors().Any(parent => ReferenceEquals(parent, table)) &&
+                    IsContentElement(element)))
+                {
+                    throw new InvalidOperationException(
+                        "Die Auswahl enthält neben der Tabelle weitere Inhalte.");
+                }
+            }
+
             // Build content roots from markers that are outside the table
             List<XElement> contentMarkers = GetEffectiveCaptureMarkers(rawMarkers)
                 .Where(marker => !marker.AncestorsAndSelf(One + "Table").Any(a => ReferenceEquals(a, table)))
