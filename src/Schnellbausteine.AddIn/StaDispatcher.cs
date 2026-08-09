@@ -9,19 +9,28 @@ namespace Schnellbausteine.AddIn
     {
         private static readonly TimeSpan CallbackUnwindDelay = TimeSpan.FromMilliseconds(100);
         private readonly ManualResetEventSlim started = new ManualResetEventSlim(false);
-        private readonly Thread thread;
+        private Thread thread;
         private SynchronizationContext context;
         private Exception startupException;
         private int disposed;
+        private int threadStarted;
 
         public StaDispatcher()
         {
-            Log.Trace("dispatcher", "thread.create");
-            thread = new Thread(RunMessageLoop);
-            thread.IsBackground = true;
-            thread.Name = "Schnellbausteine UI";
-            thread.SetApartmentState(ApartmentState.STA);
-            thread.Start();
+            Log.Trace("dispatcher", "constructor");
+        }
+
+        private void EnsureThreadStarted()
+        {
+            if (Interlocked.CompareExchange(ref threadStarted, 1, 0) == 0)
+            {
+                Log.Trace("dispatcher", "thread.create");
+                thread = new Thread(RunMessageLoop);
+                thread.IsBackground = true;
+                thread.Name = "Schnellbausteine UI";
+                thread.SetApartmentState(ApartmentState.STA);
+                thread.Start();
+            }
         }
 
         public void Post(Action action)
@@ -31,6 +40,9 @@ namespace Schnellbausteine.AddIn
             {
                 throw new ObjectDisposedException("StaDispatcher");
             }
+            
+            EnsureThreadStarted();
+            
             if (!started.Wait(TimeSpan.FromSeconds(5)))
             {
                 throw new InvalidOperationException("Der Schnellbausteine-UI-Thread konnte nicht gestartet werden.");
@@ -66,6 +78,8 @@ namespace Schnellbausteine.AddIn
                 throw new ObjectDisposedException("StaDispatcher");
             }
 
+            EnsureThreadStarted();
+            
             Log.Trace("dispatcher", "deferred.queue");
             ThreadPool.QueueUserWorkItem(delegate
             {
@@ -92,7 +106,8 @@ namespace Schnellbausteine.AddIn
         public bool Shutdown(TimeSpan timeout)
         {
             Log.Trace("dispatcher", "shutdown.request");
-            if (Interlocked.Exchange(ref disposed, 1) != 0) return !thread.IsAlive;
+            if (Interlocked.Exchange(ref disposed, 1) != 0) return thread == null || !thread.IsAlive;
+            if (thread == null) return true;
             if (!started.Wait(TimeSpan.FromSeconds(1)) || context == null) return !thread.IsAlive;
 
             if (Thread.CurrentThread == thread)
@@ -104,7 +119,11 @@ namespace Schnellbausteine.AddIn
             context.Post(delegate { CloseFormsAndExit(); }, null);
             bool stopped = thread.Join(timeout);
             Log.Trace("dispatcher", stopped ? "shutdown.complete" : "shutdown.timeout");
-            if (stopped) started.Dispose();
+            if (stopped)
+            {
+                started.Dispose();
+                thread = null;
+            }
             return stopped;
         }
 
