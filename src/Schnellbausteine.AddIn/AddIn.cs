@@ -106,6 +106,21 @@ namespace Schnellbausteine.AddIn
         {
             Interlocked.Exchange(ref shuttingDown, 1);
             Log.Trace("addin.shutdown", "begin");
+            try
+            {
+                if (ribbonUi != null && Marshal.IsComObject(ribbonUi))
+                {
+                    Log.Trace("ribbon.earlyrelease", "before");
+                    Marshal.ReleaseComObject(ribbonUi);
+                    ribbonUi = null;
+                    Log.Trace("ribbon.earlyrelease", "after");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Fehler beim frühen Freigeben der Ribbon-UI.", ex);
+            }
+            Log.Trace("addin.shutdown", "end");
         }
 
         public void OnDisconnection(ext_DisconnectMode removeMode, ref Array custom)
@@ -126,7 +141,7 @@ namespace Schnellbausteine.AddIn
                     Log.Trace("ribbon.cleanup", "before");
                     if (Marshal.IsComObject(ribbonUi))
                     {
-                        Marshal.ReleaseComObject(ribbonUi);
+                        Marshal.FinalReleaseComObject(ribbonUi);
                     }
                     ribbonUi = null;
                     Log.Trace("ribbon.cleanup", "after");
@@ -135,6 +150,19 @@ namespace Schnellbausteine.AddIn
             catch (Exception ex)
             {
                 Log.Error("Fehler beim Freigeben der Ribbon-UI.", ex);
+            }
+            
+            try
+            {
+                Log.Trace("cleanup.gc", "before");
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+                Log.Trace("cleanup.gc", "after");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Fehler beim Garbage Collection.", ex);
             }
             
             Log.Trace("addin.disconnection", "exit");
