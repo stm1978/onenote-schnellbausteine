@@ -316,7 +316,8 @@ namespace Schnellbausteine.Tests
                     new XElement(OneNoteXml.One + "T",
                         new XAttribute("selected", "all"),
                         new XCData("extern"))));
-            Throws<InvalidOperationException>(() => OneNoteXml.ExtractSelection(mixed, null));
+            // Previously rejected; now allowed: mixed table + external content should be captured
+            OneNoteXml.ExtractSelection(mixed, null);
 
             XDocument multi = Page(
                 "<one:Outline><one:OEChildren><one:OE><one:Table selected=\"all\">" +
