@@ -1456,8 +1456,8 @@ namespace Schnellbausteine.Tests
             string dialogs = File.ReadAllText(
                 Path.Combine(root, "src", "Schnellbausteine.AddIn", "Dialogs.cs"));
             Assert(
-                dialogs.Contains("\"OneNote Schnellbausteine verwalten\""),
-                "UI-Text OneNote Schnellbausteine verwalten fehlt.");
+                dialogs.Contains("\"Schnellbausteine verwalten\""),
+                "UI-Text Schnellbausteine verwalten fehlt.");
             Assert(dialogs.Contains("\"Löschen\""), "UI-Text Löschen fehlt.");
             Assert(dialogs.Contains("\"Schließen\""), "UI-Text Schließen fehlt.");
         }
