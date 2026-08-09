@@ -191,7 +191,24 @@ namespace Schnellbausteine.Core
             List<XElement> structuralTables = FindSelectedTables(rawMarkers);
             if (structuralTables.Count > 0)
             {
-                return CreateTableCaptureContext(rawMarkers, structuralTables);
+                // If selection includes table(s) plus other external markers, allow
+                // mixed capture (table + nearby content) by falling through to
+                // content capture. Only treat as exclusive table capture when all
+                // markers are within the same table.
+                if (structuralTables.Count == 1)
+                {
+                    XElement table = structuralTables[0];
+                    bool allMarkersWithinTable = rawMarkers.All(marker => marker.AncestorsAndSelf().Any(a => ReferenceEquals(a, table)));
+                    if (allMarkersWithinTable)
+                    {
+                        return CreateTableCaptureContext(rawMarkers, structuralTables);
+                    }
+                }
+                else
+                {
+                    // multiple structural tables: keep existing behavior
+                    return CreateTableCaptureContext(rawMarkers, structuralTables);
+                }
             }
 
             return CreateContentCaptureContext(rawMarkers);
