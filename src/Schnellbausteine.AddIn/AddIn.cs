@@ -112,11 +112,31 @@ namespace Schnellbausteine.AddIn
         {
             Log.Trace("addin.disconnection", "entry");
             Interlocked.Exchange(ref shuttingDown, 1);
+            
             bool dispatcherStopped = dispatcher.Shutdown(TimeSpan.FromSeconds(5));
             if (!dispatcherStopped)
             {
-                Log.Info("STA-UI-Thread reagierte beim Beenden nicht.");
+                Log.Info("STA-UI-Thread reagierte beim Beenden nicht innerhalb von 5 Sekunden.");
             }
+            
+            try
+            {
+                if (ribbonUi != null)
+                {
+                    Log.Trace("ribbon.cleanup", "before");
+                    if (Marshal.IsComObject(ribbonUi))
+                    {
+                        Marshal.ReleaseComObject(ribbonUi);
+                    }
+                    ribbonUi = null;
+                    Log.Trace("ribbon.cleanup", "after");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Fehler beim Freigeben der Ribbon-UI.", ex);
+            }
+            
             Log.Trace("addin.disconnection", "exit");
             Log.Flush(TimeSpan.FromMilliseconds(500));
         }
