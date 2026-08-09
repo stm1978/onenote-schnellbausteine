@@ -158,6 +158,16 @@ namespace Schnellbausteine.AddIn
                 GC.Collect();
                 GC.WaitForPendingFinalizers();
                 GC.Collect();
+                // Aggressively free unused COM libraries
+                try
+                {
+                    NativeMethods.CoFreeUnusedLibraries();
+                    Log.Trace("cleanup.co", "CoFreeUnusedLibraries called");
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("Fehler beim CoFreeUnusedLibraries-Aufruf.", ex);
+                }
                 Log.Trace("cleanup.gc", "after");
             }
             catch (Exception ex)
@@ -525,6 +535,9 @@ namespace Schnellbausteine.AddIn
         {
             [DllImport("user32.dll")]
             internal static extern IntPtr GetForegroundWindow();
+
+            [DllImport("ole32.dll")]
+            internal static extern void CoFreeUnusedLibraries();
         }
     }
 
