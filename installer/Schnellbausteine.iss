@@ -1,8 +1,8 @@
 #ifndef AppVersion
-  #define AppVersion "Beta 0.2.4"
+  #define AppVersion "Beta 0.2.5"
 #endif
 #ifndef FileVersion
-  #define FileVersion "0.2.4.0"
+  #define FileVersion "0.2.5.0"
 #endif
 
 #define AppName "OneNote Schnellbausteine"
@@ -30,7 +30,7 @@ CloseApplications=no
 CloseApplicationsFilter=ONENOTE.EXE
 RestartApplications=no
 OutputDir=..\artifacts\setup
-OutputBaseFilename=OneNote-Schnellbausteine-Setup-Beta-0.2.4
+OutputBaseFilename=OneNote-Schnellbausteine-Setup-Beta-0.2.5
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -38,7 +38,7 @@ SetupLogging=yes
 UninstallDisplayName={#AppName}
 VersionInfoVersion={#FileVersion}
 VersionInfoCompany={#AppPublisher}
-VersionInfoDescription=Installer für OneNote Schnellbausteine – Beta 0.2.4
+VersionInfoDescription=Installer für OneNote Schnellbausteine – Beta 0.2.5
 VersionInfoProductName={#AppName}
 VersionInfoProductVersion={#FileVersion}
 VersionInfoProductTextVersion={#AppVersion}
@@ -50,7 +50,7 @@ Name: "german"; MessagesFile: "compiler:Languages\German.isl"
 
 [Messages]
 german.WelcomeLabel1=Willkommen beim Setup von [name]
-german.WelcomeLabel2=Dieses Programm installiert OneNote Schnellbausteine – Beta 0.2.4 nur für Ihr Windows-Benutzerkonto.%n%nDie passende 32- oder 64-Bit-Version wird automatisch anhand Ihrer OneNote-Installation ausgewählt.%n%nOneNote muss während Installation und Deinstallation vollständig geschlossen sein.
+german.WelcomeLabel2=Dieses Programm installiert OneNote Schnellbausteine – Beta 0.2.5 nur für Ihr Windows-Benutzerkonto.%n%nDie passende 32- oder 64-Bit-Version wird automatisch anhand Ihrer OneNote-Installation ausgewählt.%n%nOneNote muss während Installation und Deinstallation vollständig geschlossen sein.
 german.FinishedHeadingLabel=Installation abgeschlossen
 german.FinishedLabelNoIcons=OneNote Schnellbausteine wurde erfolgreich installiert.%n%nStarten Sie OneNote jetzt neu.
 
@@ -314,7 +314,7 @@ begin
     BitnessText := '32 Bit';
 
   Result :=
-    'Setup ist bereit, OneNote Schnellbausteine – Beta 0.2.4 zu installieren.' + NewLine +
+    'Setup ist bereit, OneNote Schnellbausteine – Beta 0.2.5 zu installieren.' + NewLine +
     NewLine +
     'Erkannte OneNote-Version: ' + BitnessText + NewLine +
     'Installation: Nur für den aktuellen Benutzer (keine Administratorrechte)' +

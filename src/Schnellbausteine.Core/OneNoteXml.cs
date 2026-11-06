@@ -189,7 +189,7 @@ namespace Schnellbausteine.Core
             {
                 List<XElement> effectiveMarkers = GetEffectiveCaptureMarkers(rawMarkers);
                 bool containsOtherContent = effectiveMarkers.Any(marker =>
-                    !selectedInk.Any(ink => IsWithin(marker, ink)));
+                    ContainsContentOutsideInk(marker, selectedInk));
                 return containsOtherContent
                     ? CreateMixedCaptureContext(rawMarkers, effectiveMarkers, selectedInk)
                     : CreateInkCaptureContext(rawMarkers, selectedInk);
@@ -245,7 +245,7 @@ namespace Schnellbausteine.Core
             if (table != null) ValidateTableSelectionMarkers(table, rawMarkers);
 
             List<XElement> contentMarkers = effectiveMarkers
-                .Where(marker => !selectedInk.Any(ink => IsWithin(marker, ink)))
+                .Where(marker => ContainsContentOutsideInk(marker, selectedInk))
                 .Where(marker => table == null || !IsWithin(marker, table))
                 .ToList();
             if (contentMarkers.Any(marker =>
@@ -258,7 +258,7 @@ namespace Schnellbausteine.Core
                 ? new List<XElement>()
                 : BuildContentCaptureRoots(contentMarkers);
             if (contentRoots.Any(root =>
-                selectedInk.Any(ink => IsWithin(ink, root)) ||
+                selectedInk.Any(ink => IsWithin(root, ink)) ||
                 table != null && IsWithin(table, root)))
             {
                 throw new InvalidOperationException(
@@ -269,14 +269,19 @@ namespace Schnellbausteine.Core
             foreach (XElement root in contentRoots)
             {
                 XElement clone = new XElement(root);
-                PruneUnselectedContent(clone, false);
+                bool selectedAncestor = root.Ancestors().Any(IsFullySelected);
+                if (selectedAncestor) clone.SetAttributeValue("selected", "all");
+                RemoveSelectedInk(clone);
+                PruneUnselectedContent(clone, selectedAncestor);
                 if (!clone.DescendantsAndSelf().Any(IsSelected) ||
                     !clone.DescendantsAndSelf().Any(IsContentElement))
                 {
                     throw new InvalidOperationException(
                         "Ein gemischter Inhaltsblock enthält keinen eindeutig ausgewählten Inhalt.");
                 }
-                items.Add(new MixedCaptureItem { Source = root, Root = clone });
+                XElement source = contentMarkers.FirstOrDefault(marker =>
+                    IsWithin(marker, root) || IsWithin(root, marker)) ?? root;
+                items.Add(new MixedCaptureItem { Source = source, Root = clone });
             }
             if (table != null)
             {
@@ -312,12 +317,15 @@ namespace Schnellbausteine.Core
         private static void ValidateSelectedInk(IList<XElement> selectedInk)
         {
             if (selectedInk.Count == 0 ||
-                selectedInk.Any(ink => !IsFullySelected(ink)))
+                selectedInk.Any(ink =>
+                    !IsFullySelected(ink) &&
+                    !ink.Ancestors().Any(IsFullySelected)))
             {
                 throw new InvalidOperationException(
                     "Die Freihandauswahl enthält keinen vollständig gelieferten InkDrawing-Binärblob.");
             }
-            if (selectedInk.Any(ink => ink.Ancestors().Any(IsFullySelected)))
+            if (selectedInk.Any(ink => ink.Ancestors().Any(ancestor =>
+                IsFullySelected(ancestor) && ancestor.Name != One + "OE")))
             {
                 throw new InvalidOperationException(
                     "Eine vollständig markierte übergeordnete Seitenstruktur ist für Freihand nicht eindeutig.");
@@ -556,6 +564,18 @@ namespace Schnellbausteine.Core
                     : marker.Ancestors(One + "OE").FirstOrDefault();
                 if (candidate == null)
                 {
+                    if (marker.Name == One + "Title" ||
+                        marker.Name == One + "Outline" ||
+                        marker.Name == One + "OEChildren")
+                    {
+                        int rootCount = roots.Count;
+                        foreach (XElement outlineElement in marker.Descendants(One + "OE"))
+                        {
+                            AddCaptureRoot(roots, outlineElement);
+                        }
+                        if (roots.Count > rootCount) continue;
+                    }
+
                     throw new InvalidOperationException(
                         "Die Auswahl enthält einen Inhalt ohne eindeutige OE-Wurzel.");
                 }
@@ -574,6 +594,27 @@ namespace Schnellbausteine.Core
                     "Die OneNote-Auswahl enthält keinen speicherbaren Inhalt.");
             }
             return roots;
+        }
+
+        private static bool ContainsContentOutsideInk(
+            XElement marker,
+            IList<XElement> selectedInk)
+        {
+            return marker.DescendantsAndSelf().Any(element =>
+                IsContentElement(element) &&
+                !selectedInk.Any(ink => IsWithin(element, ink)));
+        }
+
+        private static void RemoveSelectedInk(XElement content)
+        {
+            foreach (XElement ink in content.DescendantsAndSelf(One + "InkDrawing")
+                .Where(element =>
+                    IsSelected(element) ||
+                    element.Ancestors().Any(IsFullySelected))
+                .ToList())
+            {
+                ink.Remove();
+            }
         }
 
         private static void AddCaptureRoot(ICollection<XElement> roots, XElement candidate)

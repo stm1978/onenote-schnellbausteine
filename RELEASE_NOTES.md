@@ -1,4 +1,10 @@
-# OneNote Schnellbausteine – Beta 0.2.4
+# OneNote Schnellbausteine – Beta 0.2.5
+
+## v0.2.5-beta.1
+
+- Ermöglicht das getrennte Speichern ausgewählter Zeichnungen und Texte, auch wenn sie in derselben OneNote-OE-Struktur liegen.
+- Erfasst vollständig ausgewählte Ink-Gruppen unter einer OE-Wurzel und bewahrt die relativen Positionen beim gemeinsamen Einfügen.
+- Ergänzt Laufzeitmessungen für Seitendatenabruf, XML-Verarbeitung, Fragmentladen und OneNote-Update, um langsame Einfügevorgänge gezielt einzugrenzen.
 
 ## v0.2.4-beta.1
 

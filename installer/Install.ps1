@@ -63,7 +63,7 @@ try {
 
     $addIn = $base.CreateSubKey("Software\Microsoft\Office\OneNote\AddIns\$progId")
     $addIn.SetValue("FriendlyName", "OneNote Schnellbausteine")
-    $addIn.SetValue("Description", "OneNote Schnellbausteine – Beta 0.2.4")
+    $addIn.SetValue("Description", "OneNote Schnellbausteine – Beta 0.2.5")
     $addIn.SetValue("LoadBehavior", 3, [Microsoft.Win32.RegistryValueKind]::DWord)
     $addIn.Close()
 }

@@ -18,14 +18,14 @@ function Assert-Equal([string]$Description, [object]$Actual, [object]$Expected) 
 
 $product = "OneNote Schnellbausteine"
 $publisher = "Stefan Malter | Malter365.de"
-$displayVersion = "Beta 0.2.4"
-$technicalVersion = "0.2.4-beta.1"
-$setupName = "OneNote-Schnellbausteine-Setup-Beta-0.2.4.exe"
+$displayVersion = "Beta 0.2.5"
+$technicalVersion = "0.2.5-beta.1"
+$setupName = "OneNote-Schnellbausteine-Setup-Beta-0.2.5.exe"
 
 Assert-Contains "src\Schnellbausteine.AddIn\Properties\AssemblyInfo.cs" "AssemblyProduct(`"$product`")"
 Assert-Contains "src\Schnellbausteine.AddIn\Properties\AssemblyInfo.cs" "AssemblyCompany(`"$publisher`")"
 Assert-Contains "src\Schnellbausteine.AddIn\Properties\AssemblyInfo.cs" "AssemblyVersion(`"1.0.0.0`")"
-Assert-Contains "src\Schnellbausteine.AddIn\Properties\AssemblyInfo.cs" "AssemblyFileVersion(`"0.2.4.0`")"
+Assert-Contains "src\Schnellbausteine.AddIn\Properties\AssemblyInfo.cs" "AssemblyFileVersion(`"0.2.5.0`")"
 Assert-Contains "src\Schnellbausteine.AddIn\Properties\AssemblyInfo.cs" "AssemblyInformationalVersion(`"$displayVersion`")"
 Assert-Contains "src\Schnellbausteine.Core\Properties\AssemblyInfo.cs" "AssemblyProduct(`"$product`")"
 Assert-Contains "src\Schnellbausteine.AddIn\AddIn.cs" 'Guid("CCF3B64A-9580-4D44-BDCE-49BFE95AC510")'
@@ -41,7 +41,7 @@ Assert-Contains "installer\Schnellbausteine.iss" '#define AddInProgId "Schnellba
 Assert-Contains "installer\Schnellbausteine.iss" "OutputBaseFilename=$($setupName.Substring(0, $setupName.Length - 4))"
 Assert-Contains "installer\Schnellbausteine.iss" "DefaultDirName={localappdata}\Schnellbausteine\AddIn"
 Assert-Contains "installer\Test-Setup.ps1" 'Join-Path $env:LOCALAPPDATA "Schnellbausteine\Data"'
-Assert-Contains "installer\Test-Setup.ps1" 'if ($uninstall.GetValue("DisplayVersion") -ne "Beta 0.2.4")'
+Assert-Contains "installer\Test-Setup.ps1" 'if ($uninstall.GetValue("DisplayVersion") -ne "Beta 0.2.5")'
 Assert-Contains "installer\Schnellbausteine.iss" "ArchitecturesAllowed=x86compatible x64compatible"
 Assert-Contains "installer\Schnellbausteine.iss" "OneNotePlatform := ReadPlatformFromRegistry();"
 Assert-Contains "installer\Build-Setup.ps1" "[string]`$Version = `"$technicalVersion`""

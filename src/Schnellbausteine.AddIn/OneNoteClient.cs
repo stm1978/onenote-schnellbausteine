@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Globalization;
 using System.Xml.Linq;
 using Schnellbausteine.Core;
@@ -55,11 +56,16 @@ namespace Schnellbausteine.AddIn
 
         public XDocument ReadCurrentPage()
         {
+            Stopwatch stopwatch = Stopwatch.StartNew();
             Log.Trace("onenote.page.read", "entry");
             currentPageId = GetCurrentPageId();
             Log.Trace("onenote.application.GetPageContent", "before");
             string xml = application.GetPageContent(currentPageId, true, true);
             Log.Trace("onenote.application.GetPageContent", "after");
+            Log.Diagnostic(
+                "performance.insert.get-page-content",
+                "elapsedMs=" + stopwatch.ElapsedMilliseconds);
+            stopwatch.Restart();
             XDocument page = XDocument.Parse(xml, LoadOptions.PreserveWhitespace);
             XAttribute lastModified = page.Root == null
                 ? null
@@ -77,6 +83,9 @@ namespace Schnellbausteine.AddIn
             expectedLastModifiedTime = parsedLastModified;
             hasExpectedLastModifiedTime = true;
             Log.Diagnostic("onenote.selection", OneNoteXml.AnalyzeSelection(page).ToDiagnosticString());
+            Log.Diagnostic(
+                "performance.insert.parse-and-analyze",
+                "elapsedMs=" + stopwatch.ElapsedMilliseconds);
             Log.Trace("onenote.page.read", "exit");
             return page;
         }
@@ -107,11 +116,20 @@ namespace Schnellbausteine.AddIn
                     "Die Seite wurde vor dem Aktualisieren nicht mit Änderungszeitpunkt gelesen.");
             }
             OneNoteXml.ValidatePostInsertCaret(page);
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            string xml = page.ToString(SaveOptions.DisableFormatting);
+            Log.Diagnostic(
+                "performance.insert.serialize-page",
+                "elapsedMs=" + stopwatch.ElapsedMilliseconds);
+            stopwatch.Restart();
             Log.Trace("onenote.application.UpdatePageContent", "before");
             application.UpdatePageContent(
-                page.ToString(SaveOptions.DisableFormatting),
+                xml,
                 expectedLastModifiedTime);
             Log.Trace("onenote.application.UpdatePageContent", "after");
+            Log.Diagnostic(
+                "performance.insert.update-page-content",
+                "elapsedMs=" + stopwatch.ElapsedMilliseconds);
             hasExpectedLastModifiedTime = false;
             Log.Trace("onenote.page.update", "exit");
         }

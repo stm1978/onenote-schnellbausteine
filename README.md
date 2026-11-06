@@ -1,6 +1,6 @@
 # OneNote Schnellbausteine
 
-**Beta 0.2.4** von **Stefan Malter | Malter365.de**
+**Beta 0.2.5** von **Stefan Malter | Malter365.de**
 
 OneNote Schnellbausteine ist ein bewusst kleines, lokales COM-Add-in für **OneNote
 Desktop unter Windows** (Microsoft 365 bzw. OneNote 2016). Markierte
@@ -21,15 +21,15 @@ kopierten OneMore-Quellcode.
 > Gespeicherte Bausteine unter `%LOCALAPPDATA%\Schnellbausteine\Data` werden
 > dabei nicht gelöscht.
 
-## Beta 0.2.4 herunterladen und installieren
+## Beta 0.2.5 herunterladen und installieren
 
 > [!IMPORTANT]
 > Dies ist eine öffentliche Testversion. Bitte wichtige OneNote-Notizbücher wie
 > gewohnt synchronisieren bzw. sichern.
 
 1. Im Release
-   [**OneNote Schnellbausteine – Beta 0.2.4**](https://github.com/stm1978/onenote-schnellbausteine/releases/tag/v0.2.4-beta.1)
-   die Datei **`OneNote-Schnellbausteine-Setup-Beta-0.2.4.exe`** herunterladen.
+   [**OneNote Schnellbausteine – Beta 0.2.5**](https://github.com/stm1978/onenote-schnellbausteine/releases/tag/v0.2.5-beta.1)
+   die Datei **`OneNote-Schnellbausteine-Setup-Beta-0.2.5.exe`** herunterladen.
 2. OneNote vollständig schließen.
 3. Die heruntergeladene Setup-Datei doppelklicken und **Installieren** wählen.
 4. OneNote neu starten.
@@ -165,9 +165,9 @@ Dispatch-Bindung.
 ```powershell
 .\test.ps1 -Configuration Release -Platform x86
 .\test.ps1 -Configuration Release -Platform x64
-.\installer\Build-Setup.ps1 -Version 0.2.4-beta.1
+.\installer\Build-Setup.ps1 -Version 0.2.5-beta.1
 .\tests\Test-OneNoteStartup.ps1 `
-    -SetupPath .\artifacts\setup\OneNote-Schnellbausteine-Setup-Beta-0.2.4.exe
+    -SetupPath .\artifacts\setup\OneNote-Schnellbausteine-Setup-Beta-0.2.5.exe
 ```
 
 Die Build-Ausgaben liegen unter `artifacts\<Plattform>\<Konfiguration>`, Setup

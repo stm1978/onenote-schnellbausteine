@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -278,27 +279,37 @@ namespace Schnellbausteine.AddIn
 
         private void InsertSnippetCore(Snippet snippet, IntPtr fallbackOwnerHandle)
         {
+            Stopwatch stopwatch = Stopwatch.StartNew();
             Log.Trace("command.InsertSnippet", "entry");
-            using (var oneNote = new OneNoteClient())
+            try
             {
-                Log.Trace("onenote.menu-selection.read.piBinaryDataSelection", "before");
-                XDocument anchoredPage = oneNote.ReadCurrentPage();
-                Log.Trace("onenote.menu-selection.read.piBinaryDataSelection", "after");
-                OneNoteSelectionInfo selection = OneNoteXml.AnalyzeSelection(anchoredPage);
-                Log.Diagnostic(
-                    "onenote.menu-selection.after-item-action",
-                    selection.ToDiagnosticString());
-                if (!selection.IsUsable)
+                using (var oneNote = new OneNoteClient())
                 {
-                    Log.Trace("command.InsertSnippet", "abort-selection");
-                    throw new InvalidOperationException(selection.Problem);
-                }
+                    Log.Trace("onenote.menu-selection.read.piBinaryDataSelection", "before");
+                    XDocument anchoredPage = oneNote.ReadCurrentPage();
+                    Log.Trace("onenote.menu-selection.read.piBinaryDataSelection", "after");
+                    OneNoteSelectionInfo selection = OneNoteXml.AnalyzeSelection(anchoredPage);
+                    Log.Diagnostic(
+                        "onenote.menu-selection.after-item-action",
+                        selection.ToDiagnosticString());
+                    if (!selection.IsUsable)
+                    {
+                        Log.Trace("command.InsertSnippet", "abort-selection");
+                        throw new InvalidOperationException(selection.Problem);
+                    }
 
-                InsertSnippetOperation.Execute(
-                    oneNote,
-                    anchoredPage,
-                    snippet,
-                    repository.LoadFragment);
+                    InsertSnippetOperation.Execute(
+                        oneNote,
+                        anchoredPage,
+                        snippet,
+                        repository.LoadFragment);
+                }
+            }
+            finally
+            {
+                Log.Diagnostic(
+                    "performance.insert.total",
+                    "elapsedMs=" + stopwatch.ElapsedMilliseconds);
             }
             Log.Trace("command.InsertSnippet", "exit");
         }
