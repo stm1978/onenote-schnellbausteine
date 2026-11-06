@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using System.Xml.Linq;
 using Schnellbausteine.Core;
 
@@ -118,6 +119,7 @@ namespace Schnellbausteine.AddIn
 
         public void UpdateCurrentPage(XDocument page)
         {
+            ValidateInkFreeUpdate(page);
             Log.Trace("onenote.page.update", "entry");
             if (string.IsNullOrEmpty(currentPageId)) currentPageId = GetCurrentPageId();
             if (!hasExpectedLastModifiedTime)
@@ -142,6 +144,19 @@ namespace Schnellbausteine.AddIn
                 "elapsedMs=" + stopwatch.ElapsedMilliseconds);
             hasExpectedLastModifiedTime = false;
             Log.Trace("onenote.page.update", "exit");
+        }
+
+        internal static void ValidateInkFreeUpdate(XDocument document)
+        {
+            if (document == null) throw new ArgumentNullException("document");
+            // Rewriting exported ink can discard effects on existing originals as well.
+            if (document.Descendants(OneNoteXml.One + "InkDrawing").Any())
+            {
+                throw new InvalidOperationException(
+                    "Einfügen ist für Freihand-Bausteine und auf Seiten mit Freihandzeichnungen " +
+                    "vorübergehend gesperrt. Der XML-Schreibpfad kann Farbeffekte vorhandener " +
+                    "Originalzeichnungen verlieren. Die Seite wurde nicht aktualisiert.");
+            }
         }
 
         public void UpdateCurrentPageAndActivateWindow(XDocument page)

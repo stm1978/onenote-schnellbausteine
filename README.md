@@ -23,6 +23,18 @@ kopierten OneMore-Quellcode.
 
 ## Beta 0.2.5 herunterladen und installieren
 
+> [!CAUTION]
+> **Beta 0.2.5 vorerst nicht zum Einfügen verwenden.** Ein Tester meldet, dass
+> nach dem Einfügen auch vorhandene Originalzeichnungen ihre Rainbow-Farbe
+> verlieren. Der bisherige XML-Pfad schreibt die gesamte Seite zurück.
+> Der noch unveröffentlichte Stand sperrt deshalb Einfügen auf Seiten mit
+> Freihanddaten sowie das Einfügen von Freihand-Bausteinen vor jeder Änderung.
+> Diese Schutzsperre ist im veröffentlichten Installer nicht enthalten und
+> stellt keine Reparatur der Ink-Darstellung dar.
+> Zudem blockiert Microsoft Defender den veröffentlichten Installer als
+> `Program:Win32/Contebrew.A!ml`. Die Erkennung ist nicht geklärt;
+> Schutzmaßnahmen nicht umgehen und den Installer nicht weitergeben.
+
 > [!IMPORTANT]
 > Dies ist eine öffentliche Testversion. Bitte wichtige OneNote-Notizbücher wie
 > gewohnt synchronisieren bzw. sichern.
@@ -50,9 +62,8 @@ standardmäßig erhalten.
 Diese Version hat kein Ablaufdatum und sperrt ihre Funktionen nicht zeitgesteuert.
 Lokale Schnellbausteine werden durch Upgrade oder Deinstallation nicht gelöscht.
 
-> Die Vorabversion ist noch nicht digital signiert. Windows SmartScreen kann
-> deshalb beim ersten Start **Weitere Informationen > Trotzdem ausführen**
-> verlangen. Setup selbst benötigt keine erhöhten Rechte.
+> Die Vorabversion ist noch nicht digital signiert. Die fehlende Signatur ist
+> keine Erklärung oder Entwarnung für die aktuelle Defender-Erkennung.
 
 ## Bedienung
 
@@ -137,6 +148,10 @@ diese optionale Angabe bleiben lesbar und verändern die Zielbreite nicht.
 - Tester melden für Beta 0.2.5 weiterhin falsche Anordnung zusammengesetzter
   Zeichnungen und einfarbige Rainbow-Striche. Die XML-Roundtrip-Tests belegen
   keine originalgetreue Darstellung in OneNote; diese Fehler sind noch offen.
+- Als Schutz vor Farbverlust auch an Originalzeichnungen verweigert der
+  unveröffentlichte Add-in-Stand jeden Insert, sobald Zielseite oder Baustein
+  `InkDrawing` enthält, auch bei einem reinen Textbaustein auf einer Ink-Seite.
+  Es erfolgen dann weder XML-Transformation noch OneNote-Update.
 - Hyperlink-/MathML-Spezialcursor werden absichtlich nur an einer sicheren
   Absatzgrenze behandelt, damit kein Inhalt verloren geht.
 

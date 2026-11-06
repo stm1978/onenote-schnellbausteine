@@ -2,6 +2,7 @@
 
 ## Unveröffentlicht
 
+- **Datenverlust-Schutz:** Nach einer Testermeldung zu Farbverlust auch an Originalzeichnungen ist Einfügen bei Freihanddaten in Zielseite oder Baustein vorläufig gesperrt. Der vollständige XML-Seitenrewrite wird für diese Fälle vor jeder Transformation und zusätzlich an der Update-Grenze verhindert. Text-Einfügen auf Seiten ohne Ink bleibt verfügbar. Diese Sperre behebt weder Ink-Effekte noch Positionierung und repariert keine bereits veränderten Zeichnungen.
 - Der Speicherpfad liest vor dem Namensdialog nur die Seitenstruktur mit Auswahlmarkierungen (`piSelection`). Erst nach Bestätigung des Namens werden Binärdaten der ausgewählten Bilder und vollständigen Ink-Objekte geladen; ein Abbruch lädt keine Binärdaten. Die Seiten-/Auswahlaufnahme wird nach dem Dialog nicht wiederholt.
 - Ink-Binärdatenreferenzen über `objectID` werden vor dem Entfernen seitenbezogener IDs aufgelöst. Regressionstests prüfen die Beschränkung auf ausgewählte Objekte.
 - Die reale Dialogwartezeit wurde noch nicht in OneNote gemessen. Die Tester melden weiterhin falsche Anordnung zusammengesetzter Zeichnungen und einfarbige Rainbow-Striche; diese Fehler sind nicht als behoben anzusehen.

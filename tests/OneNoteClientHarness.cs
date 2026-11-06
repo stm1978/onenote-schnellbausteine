@@ -34,6 +34,7 @@ namespace Schnellbausteine.Tests
             public Exception UpdateException;
             public string BinaryData;
             public string PageXml;
+            public string UpdatedXml;
 
             public FakeApplication(List<string> calls)
             {
@@ -71,6 +72,7 @@ namespace Schnellbausteine.Tests
             public void UpdatePageContent(string xml, DateTime expectedLastModifiedTime)
             {
                 Calls.Add("update");
+                UpdatedXml = xml;
                 if (UpdateException != null) throw UpdateException;
             }
 
@@ -232,9 +234,13 @@ namespace Schnellbausteine.Tests
                 BinaryCallbacksUseCapturedPageOnClientThread();
                 CaptureReadDefersBinaryAndPreservesSelectedPage();
                 InsertReadStillIncludesPageBinaryData();
+                InkOnTargetPageBlocksInsertWithoutMutation();
+                InkSnippetBlocksInsertWithoutMutation();
+                DirectInkUpdateIsBlockedBeforeCom();
+                TextOnlyInsertStillUpdatesThePage();
                 ExpirationSurfaceIsRemoved();
                 FeatureActionsRemainAvailableWithoutClock();
-                Console.WriteLine("17/17 OneNote-Client-Harness-Tests erfolgreich.");
+                Console.WriteLine("21/21 OneNote-Client-Harness-Tests erfolgreich.");
                 return 0;
             }
             catch (Exception exception)
@@ -580,6 +586,102 @@ namespace Schnellbausteine.Tests
                 client.ReadCurrentPage();
             }
             Equal("window,read:capture-page:True:True", string.Join(",", calls));
+        }
+
+        private static void InkOnTargetPageBlocksInsertWithoutMutation()
+        {
+            foreach (bool nested in new[] { false, true })
+            {
+                var calls = new List<string>();
+                var application = new FakeApplication(calls);
+                XDocument page = Page();
+                var ink = new XElement(OneNoteXml.One + "InkDrawing",
+                    new XAttribute("objectID", "original-ink"),
+                    new XElement(OneNoteXml.One + "Data", "AQID"));
+                if (nested) page.Descendants(OneNoteXml.One + "OE").Single().Add(ink);
+                else page.Root.Add(ink);
+                string original = page.ToString();
+                bool loaded = false;
+                using (var client = CreateClient(application, new FakeWindowActivator(calls)))
+                {
+                    Throws<InvalidOperationException>(delegate
+                    {
+                        InsertSnippetOperation.Execute(
+                            client, page, new Snippet { Id = "text" },
+                            delegate
+                            {
+                                loaded = true;
+                                return Fragment();
+                            });
+                    });
+                }
+                Equal(false, loaded);
+                Equal(original, page.ToString());
+                Equal(0, calls.Count);
+                Equal(null, application.UpdatedXml);
+            }
+        }
+
+        private static void InkSnippetBlocksInsertWithoutMutation()
+        {
+            var calls = new List<string>();
+            var application = new FakeApplication(calls);
+            XDocument page = Page();
+            string original = page.ToString();
+            XDocument fragment = Fragment();
+            fragment.Descendants(OneNoteXml.One + "OE").Single().ReplaceNodes(
+                new XElement(OneNoteXml.One + "InkDrawing",
+                    new XElement(OneNoteXml.One + "Data", "AQID")));
+            string originalFragment = fragment.ToString();
+            using (var client = CreateClient(application, new FakeWindowActivator(calls)))
+            {
+                Throws<InvalidOperationException>(delegate
+                {
+                    InsertSnippetOperation.Execute(
+                        client, page, new Snippet { Id = "ink" },
+                        delegate { return fragment; });
+                });
+            }
+            Equal(original, page.ToString());
+            Equal(originalFragment, fragment.ToString());
+            Equal(0, calls.Count);
+            Equal(null, application.UpdatedXml);
+        }
+
+        private static void DirectInkUpdateIsBlockedBeforeCom()
+        {
+            var calls = new List<string>();
+            var application = new FakeApplication(calls);
+            XDocument page = Page();
+            page.Root.Add(new XElement(OneNoteXml.One + "InkDrawing"));
+            string original = page.ToString();
+            using (var client = CreateClient(application, new FakeWindowActivator(calls)))
+            {
+                Throws<InvalidOperationException>(delegate
+                {
+                    client.UpdateCurrentPageAndActivateWindow(page);
+                });
+            }
+            Equal(original, page.ToString());
+            Equal(0, calls.Count);
+            Equal(null, application.UpdatedXml);
+        }
+
+        private static void TextOnlyInsertStillUpdatesThePage()
+        {
+            var calls = new List<string>();
+            var application = new FakeApplication(calls);
+            using (var client = CreateClient(application, new FakeWindowActivator(calls)))
+            {
+                InsertSnippetOperation.Execute(
+                    client, Page(), new Snippet { Id = "text" },
+                    delegate { return Fragment(); });
+            }
+            Equal("update,activate:123", string.Join(",", calls));
+            XDocument updated = XDocument.Parse(application.UpdatedXml);
+            Equal(true, updated.Descendants(OneNoteXml.One + "T")
+                .Any(text => text.Value == "snippet"));
+            OneNoteXml.ValidatePostInsertCaret(updated);
         }
 
         private static void ExpirationSurfaceIsRemoved()

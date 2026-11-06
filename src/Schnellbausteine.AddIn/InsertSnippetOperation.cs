@@ -18,10 +18,12 @@ namespace Schnellbausteine.AddIn
             if (snippet == null) throw new ArgumentNullException("snippet");
             if (loadFragment == null) throw new ArgumentNullException("loadFragment");
 
+            OneNoteClient.ValidateInkFreeUpdate(anchoredPage);
             Stopwatch stopwatch = Stopwatch.StartNew();
             Log.Trace("repository.load", "before");
             XDocument fragment = loadFragment(snippet.Id);
             Log.Trace("repository.load", "after");
+            OneNoteClient.ValidateInkFreeUpdate(fragment);
             Log.Diagnostic("performance.insert.fragment-load", "elapsedMs=" + stopwatch.ElapsedMilliseconds);
             stopwatch.Restart();
             Log.Trace("onenote.xml.insert", "before");
