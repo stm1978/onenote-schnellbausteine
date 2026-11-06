@@ -93,9 +93,13 @@ namespace Schnellbausteine.AddIn
             list.DataSource = repository.GetAll();
             if (selectedId != null)
             {
-                foreach (object item in list.Items)
+                for (int index = 0; index < list.Items.Count; index++)
                 {
-                    if (((Snippet)item).Id == selectedId) list.SelectedItem = item;
+                    if (((Snippet)list.Items[index]).Id == selectedId)
+                    {
+                        list.SelectedIndex = index;
+                        break;
+                    }
                 }
             }
         }

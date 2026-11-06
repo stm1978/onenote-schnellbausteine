@@ -1,4 +1,9 @@
-# OneNote Schnellbausteine – Beta 0.2.3
+# OneNote Schnellbausteine – Beta 0.2.4
+
+## v0.2.4-beta.1
+
+- Behebt den Fehler beim Wiederherstellen der Listenauswahl nach einer Umbenennung; die Liste wird nicht mehr während einer Enumeration geändert.
+- Ergänzt einen Regressionstest für aufeinanderfolgende Umbenennungen mit wechselnder Sortierposition.
 
 ## v0.2.3-beta.1
 

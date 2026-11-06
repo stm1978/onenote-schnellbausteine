@@ -523,9 +523,31 @@ namespace Schnellbausteine.Tests
                 loadItems.Invoke(dialog, null);
                 if (list.Items.Count != 0 || list.SelectedItem != null) return false;
 
-                save.Invoke(repository, new object[] { "Gamma", fragment, false });
+                object gamma = save.Invoke(
+                    repository,
+                    new object[] { "Gamma", fragment, false });
+                save.Invoke(repository, new object[] { "Alpha", fragment, false });
+                save.Invoke(repository, new object[] { "Beta", fragment, false });
+                string gammaId = (string)id.GetValue(gamma, null);
                 loadItems.Invoke(dialog, null);
-                return ListText(list) == "Gamma";
+                if (ListText(list) != "Alpha,Beta,Gamma") return false;
+
+                list.SelectedItem = list.Items.Cast<object>().Single(item =>
+                    (string)id.GetValue(item, null) == gammaId);
+                rename.Invoke(repository, new object[] { gammaId, "Zulu" });
+                loadItems.Invoke(dialog, null);
+                if (ListText(list) != "Alpha,Beta,Zulu" ||
+                    list.SelectedItem == null ||
+                    (string)id.GetValue(list.SelectedItem, null) != gammaId)
+                {
+                    return false;
+                }
+
+                rename.Invoke(repository, new object[] { gammaId, "Aardvark" });
+                loadItems.Invoke(dialog, null);
+                return ListText(list) == "Aardvark,Alpha,Beta" &&
+                    list.SelectedItem != null &&
+                    (string)id.GetValue(list.SelectedItem, null) == gammaId;
             }
             finally
             {
