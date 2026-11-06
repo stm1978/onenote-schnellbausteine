@@ -1,6 +1,6 @@
-# OneNote Schnellbausteine – Beta 0.2.2
+# OneNote Schnellbausteine – Beta 0.2.3
 
-## v0.2.2-beta.1
+## v0.2.3-beta.1
 
 - Trennt das Speichern einer Umbenennung von späteren Listen-/Ribbon-Refreshes, damit nachgelagerte Fehler nicht mehr als fehlgeschlagene Umbenennung gemeldet werden; mehrere aufeinanderfolgende Renames sind abgesichert.
 - Ink-Positionen werden beim Speichern als relative Abstände der gemeinsamen Auswahl bewahrt und beim Einfügen gemeinsam am Ziel-Outline verankert.
