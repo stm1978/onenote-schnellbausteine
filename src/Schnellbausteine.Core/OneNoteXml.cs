@@ -115,8 +115,8 @@ namespace Schnellbausteine.Core
                 {
                     PruneUnselectedContent(clone, false);
                 }
-                RemoveTransientAttributes(clone);
                 ResolveBinaryData(clone, binaryResolver);
+                RemoveTransientAttributes(clone);
                 content.Add(clone);
             }
 
@@ -159,12 +159,19 @@ namespace Schnellbausteine.Core
 
             var snippet = new XElement(Snippet + "Snippet",
                 new XAttribute("version", "1"));
+            var geometry = new XElement(Snippet + "Geometry");
             double minimumWidth;
             if (TryDeriveMinimumWidth(capture.Outline, content, out minimumWidth))
             {
-                snippet.Add(new XElement(Snippet + "Geometry",
-                    new XAttribute("minWidth", FormatWidth(minimumWidth))));
+                geometry.SetAttributeValue("minWidth", FormatWidth(minimumWidth));
             }
+            bool relativeInkZ;
+            if (NormalizeInkPositions(content, out relativeInkZ))
+            {
+                geometry.SetAttributeValue("inkPositions", "relative");
+                if (relativeInkZ) geometry.SetAttributeValue("inkPositionZ", "relative");
+            }
+            if (geometry.HasAttributes) snippet.Add(geometry);
             snippet.Add(definitions, quickStyles, content);
             return new XDocument(snippet);
         }
@@ -182,7 +189,7 @@ namespace Schnellbausteine.Core
             {
                 List<XElement> effectiveMarkers = GetEffectiveCaptureMarkers(rawMarkers);
                 bool containsOtherContent = effectiveMarkers.Any(marker =>
-                    !selectedInk.Any(ink => IsWithin(marker, ink)));
+                    ContainsContentOutsideInk(marker, selectedInk));
                 return containsOtherContent
                     ? CreateMixedCaptureContext(rawMarkers, effectiveMarkers, selectedInk)
                     : CreateInkCaptureContext(rawMarkers, selectedInk);
@@ -238,7 +245,7 @@ namespace Schnellbausteine.Core
             if (table != null) ValidateTableSelectionMarkers(table, rawMarkers);
 
             List<XElement> contentMarkers = effectiveMarkers
-                .Where(marker => !selectedInk.Any(ink => IsWithin(marker, ink)))
+                .Where(marker => ContainsContentOutsideInk(marker, selectedInk))
                 .Where(marker => table == null || !IsWithin(marker, table))
                 .ToList();
             if (contentMarkers.Any(marker =>
@@ -251,7 +258,7 @@ namespace Schnellbausteine.Core
                 ? new List<XElement>()
                 : BuildContentCaptureRoots(contentMarkers);
             if (contentRoots.Any(root =>
-                selectedInk.Any(ink => IsWithin(ink, root)) ||
+                selectedInk.Any(ink => IsWithin(root, ink)) ||
                 table != null && IsWithin(table, root)))
             {
                 throw new InvalidOperationException(
@@ -262,14 +269,19 @@ namespace Schnellbausteine.Core
             foreach (XElement root in contentRoots)
             {
                 XElement clone = new XElement(root);
-                PruneUnselectedContent(clone, false);
+                bool selectedAncestor = root.Ancestors().Any(IsFullySelected);
+                if (selectedAncestor) clone.SetAttributeValue("selected", "all");
+                RemoveSelectedInk(clone);
+                PruneUnselectedContent(clone, selectedAncestor);
                 if (!clone.DescendantsAndSelf().Any(IsSelected) ||
                     !clone.DescendantsAndSelf().Any(IsContentElement))
                 {
                     throw new InvalidOperationException(
                         "Ein gemischter Inhaltsblock enthält keinen eindeutig ausgewählten Inhalt.");
                 }
-                items.Add(new MixedCaptureItem { Source = root, Root = clone });
+                XElement source = contentMarkers.FirstOrDefault(marker =>
+                    IsWithin(marker, root) || IsWithin(root, marker)) ?? root;
+                items.Add(new MixedCaptureItem { Source = source, Root = clone });
             }
             if (table != null)
             {
@@ -305,12 +317,15 @@ namespace Schnellbausteine.Core
         private static void ValidateSelectedInk(IList<XElement> selectedInk)
         {
             if (selectedInk.Count == 0 ||
-                selectedInk.Any(ink => !IsFullySelected(ink)))
+                selectedInk.Any(ink =>
+                    !IsFullySelected(ink) &&
+                    !ink.Ancestors().Any(IsFullySelected)))
             {
                 throw new InvalidOperationException(
                     "Die Freihandauswahl enthält keinen vollständig gelieferten InkDrawing-Binärblob.");
             }
-            if (selectedInk.Any(ink => ink.Ancestors().Any(IsFullySelected)))
+            if (selectedInk.Any(ink => ink.Ancestors().Any(ancestor =>
+                IsFullySelected(ancestor) && ancestor.Name != One + "OE")))
             {
                 throw new InvalidOperationException(
                     "Eine vollständig markierte übergeordnete Seitenstruktur ist für Freihand nicht eindeutig.");
@@ -341,10 +356,6 @@ namespace Schnellbausteine.Core
         private static XElement CreateInkRoot(XElement ink)
         {
             XElement clone = new XElement(ink);
-            foreach (XElement position in clone.DescendantsAndSelf(One + "Position").ToList())
-            {
-                position.Remove();
-            }
             return new XElement(One + "OE", clone);
         }
 
@@ -553,6 +564,18 @@ namespace Schnellbausteine.Core
                     : marker.Ancestors(One + "OE").FirstOrDefault();
                 if (candidate == null)
                 {
+                    if (marker.Name == One + "Title" ||
+                        marker.Name == One + "Outline" ||
+                        marker.Name == One + "OEChildren")
+                    {
+                        int rootCount = roots.Count;
+                        foreach (XElement outlineElement in marker.Descendants(One + "OE"))
+                        {
+                            AddCaptureRoot(roots, outlineElement);
+                        }
+                        if (roots.Count > rootCount) continue;
+                    }
+
                     throw new InvalidOperationException(
                         "Die Auswahl enthält einen Inhalt ohne eindeutige OE-Wurzel.");
                 }
@@ -571,6 +594,27 @@ namespace Schnellbausteine.Core
                     "Die OneNote-Auswahl enthält keinen speicherbaren Inhalt.");
             }
             return roots;
+        }
+
+        private static bool ContainsContentOutsideInk(
+            XElement marker,
+            IList<XElement> selectedInk)
+        {
+            return marker.DescendantsAndSelf().Any(element =>
+                IsContentElement(element) &&
+                !selectedInk.Any(ink => IsWithin(element, ink)));
+        }
+
+        private static void RemoveSelectedInk(XElement content)
+        {
+            foreach (XElement ink in content.DescendantsAndSelf(One + "InkDrawing")
+                .Where(element =>
+                    IsSelected(element) ||
+                    element.Ancestors().Any(IsFullySelected))
+                .ToList())
+            {
+                ink.Remove();
+            }
         }
 
         private static void AddCaptureRoot(ICollection<XElement> roots, XElement candidate)
@@ -670,6 +714,7 @@ namespace Schnellbausteine.Core
             }
 
             foreach (XElement element in incoming) RemoveTransientAttributes(element);
+            RebaseInkPositions(incoming, selection.Outline, fragment);
             MergeTagDefinitions(page, fragment, incoming);
             MergeQuickStyleDefinitions(page, fragment, incoming);
             ClearSelection(page);
@@ -1398,6 +1443,153 @@ namespace Schnellbausteine.Core
                 IsPositiveFinite(result);
         }
 
+        private static bool NormalizeInkPositions(XElement content, out bool hasZ)
+        {
+            hasZ = false;
+            List<XElement> inkDrawings = content.DescendantsAndSelf(One + "InkDrawing").ToList();
+            if (inkDrawings.Count == 0) return false;
+
+            var positions = new List<Tuple<XElement, double, double, double>>();
+            bool missingPosition = false;
+            foreach (XElement ink in inkDrawings)
+            {
+                XElement position = ink.Element(One + "Position");
+                double x;
+                double y;
+                double z = 0;
+                if (position == null)
+                {
+                    missingPosition = true;
+                    continue;
+                }
+                if (!TryReadCoordinate((string)position.Attribute("x"), out x) ||
+                    !TryReadCoordinate((string)position.Attribute("y"), out y))
+                {
+                    throw new InvalidOperationException(
+                        "Die Freihandauswahl enthält eine ungültige InkDrawing-Position.");
+                }
+                string zValue = (string)position.Attribute("z");
+                bool currentHasZ = zValue != null;
+                if (positions.Count > 0 && currentHasZ != hasZ)
+                {
+                    throw new InvalidOperationException(
+                        "Die Freihandauswahl enthält unvollständige InkDrawing-Positionen.");
+                }
+                if (positions.Count == 0) hasZ = currentHasZ;
+                if (currentHasZ && !TryReadCoordinate(zValue, out z))
+                {
+                    throw new InvalidOperationException(
+                        "Die Freihandauswahl enthält eine ungültige InkDrawing-Position.");
+                }
+                positions.Add(Tuple.Create(position, x, y, z));
+            }
+
+            if (positions.Count == 0) return false;
+            if (missingPosition)
+            {
+                throw new InvalidOperationException(
+                    "Die Freihandauswahl enthält InkDrawing-Objekte ohne eindeutige Position.");
+            }
+            if (positions.Count != inkDrawings.Count)
+            {
+                throw new InvalidOperationException(
+                    "Die Freihandauswahl enthält InkDrawing-Objekte ohne eindeutige Position.");
+            }
+
+            double originX = positions.Min(position => position.Item2);
+            double originY = positions.Min(position => position.Item3);
+            double originZ = hasZ ? positions.Min(position => position.Item4) : 0;
+            foreach (Tuple<XElement, double, double, double> position in positions)
+            {
+                position.Item1.SetAttributeValue("x", FormatWidth(position.Item2 - originX));
+                position.Item1.SetAttributeValue("y", FormatWidth(position.Item3 - originY));
+                if (hasZ)
+                {
+                    position.Item1.SetAttributeValue("z", FormatWidth(position.Item4 - originZ));
+                }
+            }
+            return true;
+        }
+
+        private static void RebaseInkPositions(
+            IList<XElement> roots,
+            XElement targetOutline,
+            XDocument fragment)
+        {
+            XElement geometry = fragment.Root.Element(Snippet + "Geometry");
+            if (geometry == null ||
+                !string.Equals(
+                    (string)geometry.Attribute("inkPositions"),
+                    "relative",
+                    StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            XElement targetPosition = targetOutline == null
+                ? null
+                : targetOutline.Element(One + "Position");
+            double targetX;
+            double targetY;
+            double targetZ = 0;
+            if (targetPosition == null ||
+                !TryReadCoordinate((string)targetPosition.Attribute("x"), out targetX) ||
+                !TryReadCoordinate((string)targetPosition.Attribute("y"), out targetY))
+            {
+                throw new InvalidOperationException(
+                    "Die Einfügeposition für die Freihandauswahl konnte nicht ermittelt werden.");
+            }
+            bool rebaseZ = string.Equals(
+                (string)geometry.Attribute("inkPositionZ"),
+                "relative",
+                StringComparison.Ordinal);
+            if (rebaseZ &&
+                !TryReadCoordinate((string)targetPosition.Attribute("z"), out targetZ))
+            {
+                throw new InvalidOperationException(
+                    "Die räumliche Einfügeposition für die Freihandauswahl konnte nicht ermittelt werden.");
+            }
+
+            foreach (XElement ink in roots.SelectMany(root =>
+                root.DescendantsAndSelf(One + "InkDrawing")))
+            {
+                XElement position = ink.Element(One + "Position");
+                double x;
+                double y;
+                if (position == null ||
+                    !TryReadCoordinate((string)position.Attribute("x"), out x) ||
+                    !TryReadCoordinate((string)position.Attribute("y"), out y))
+                {
+                    throw new InvalidOperationException(
+                        "Der gespeicherte Schnellbaustein enthält eine ungültige InkDrawing-Position.");
+                }
+
+                position.SetAttributeValue("x", FormatWidth(targetX + x));
+                position.SetAttributeValue("y", FormatWidth(targetY + y));
+                if (rebaseZ)
+                {
+                    double z;
+                    if (!TryReadCoordinate((string)position.Attribute("z"), out z))
+                    {
+                        throw new InvalidOperationException(
+                            "Der gespeicherte Schnellbaustein enthält eine ungültige InkDrawing-Position.");
+                    }
+                    position.SetAttributeValue("z", FormatWidth(targetZ + z));
+                }
+            }
+        }
+
+        private static bool TryReadCoordinate(string value, out double result)
+        {
+            return double.TryParse(
+                    value,
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out result) &&
+                !double.IsNaN(result) &&
+                !double.IsInfinity(result);
+        }
+
         private static bool IsPositiveFinite(double value)
         {
             return value > 0 && !double.IsNaN(value) && !double.IsInfinity(value);
@@ -1462,10 +1654,14 @@ namespace Schnellbausteine.Core
             if (dataElement != null) dataElement.Remove();
 
             string callback = (string)element.Attribute("callbackID");
+            if (string.IsNullOrWhiteSpace(callback) && element.Name == One + "InkDrawing")
+            {
+                callback = (string)element.Attribute("objectID");
+            }
             if (string.IsNullOrWhiteSpace(callback))
             {
                 throw new InvalidOperationException(
-                    description + " enthält weder eigenständige Data noch callbackID.");
+                    description + " enthält weder eigenständige Data noch eine Binärdatenreferenz.");
             }
             if (binaryResolver == null)
             {
@@ -1479,7 +1675,8 @@ namespace Schnellbausteine.Core
                     "OneNote lieferte keine Binärdaten für " + description + " " + callback + ".");
             }
             element.Add(new XElement(One + "Data", data));
-            element.Attribute("callbackID").Remove();
+            XAttribute callbackAttribute = element.Attribute("callbackID");
+            if (callbackAttribute != null) callbackAttribute.Remove();
         }
 
         private static void PruneUnselectedContent(XElement element, bool selectedAncestor)

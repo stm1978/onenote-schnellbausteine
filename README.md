@@ -1,6 +1,6 @@
 # OneNote Schnellbausteine
 
-**Beta 0.2** von **Stefan Malter | Malter365.de**
+**Beta 0.2.5** von **Stefan Malter | Malter365.de**
 
 OneNote Schnellbausteine ist ein bewusst kleines, lokales COM-Add-in für **OneNote
 Desktop unter Windows** (Microsoft 365 bzw. OneNote 2016). Markierte
@@ -21,15 +21,29 @@ kopierten OneMore-Quellcode.
 > Gespeicherte Bausteine unter `%LOCALAPPDATA%\Schnellbausteine\Data` werden
 > dabei nicht gelöscht.
 
-## Beta 0.2 herunterladen und installieren
+## Beta 0.2.5 herunterladen und installieren
+
+> [!CAUTION]
+> **Beta 0.2.5 vorerst nicht zum Einfügen verwenden.** Ein Tester meldet, dass
+> nach dem Einfügen auch vorhandene Originalzeichnungen ihre Rainbow-Farbe
+> verlieren. Der bisherige XML-Pfad schreibt die gesamte Seite zurück.
+> Der noch unveröffentlichte Stand schreibt nur den eindeutig identifizierten
+> Ziel-Textcontainer und neue Formatdefinitionen zurück. Andere Seitenobjekte
+> werden nicht zurückgesendet. Freihand-Bausteine und Zielcontainer mit
+> Freihanddaten bleiben gesperrt.
+> Diese Änderungen sind im veröffentlichten Installer nicht enthalten und
+> stellt keine Reparatur der Ink-Darstellung dar.
+> Zudem blockiert Microsoft Defender den veröffentlichten Installer als
+> `Program:Win32/Contebrew.A!ml`. Die Erkennung ist nicht geklärt;
+> Schutzmaßnahmen nicht umgehen und den Installer nicht weitergeben.
 
 > [!IMPORTANT]
 > Dies ist eine öffentliche Testversion. Bitte wichtige OneNote-Notizbücher wie
 > gewohnt synchronisieren bzw. sichern.
 
 1. Im Release
-   [**OneNote Schnellbausteine – Beta 0.2**](https://github.com/stm1978/onenote-schnellbausteine/releases/tag/v0.2.0-beta.3)
-   die Datei **`OneNote-Schnellbausteine-Setup-Beta-0.2.exe`** herunterladen.
+   [**OneNote Schnellbausteine – Beta 0.2.5**](https://github.com/stm1978/onenote-schnellbausteine/releases/tag/v0.2.5-beta.1)
+   die Datei **`OneNote-Schnellbausteine-Setup-Beta-0.2.5.exe`** herunterladen.
 2. OneNote vollständig schließen.
 3. Die heruntergeladene Setup-Datei doppelklicken und **Installieren** wählen.
 4. OneNote neu starten.
@@ -47,18 +61,19 @@ Gespeicherte Schnellbausteine unter
 `%LOCALAPPDATA%\Schnellbausteine\Data` bleiben bei der Deinstallation
 standardmäßig erhalten.
 
-Die Beta kann bis einschließlich **31. Dezember 2026** vollständig verwendet
-werden. Ab dem 1. Dezember 2026 erscheint bei jedem Add-in-Start ein Hinweis auf
-das Ablaufdatum. Ab dem 1. Januar 2027 sind die Add-in-Funktionen gesperrt; die
-aktuelle Version kann unter [malter365.de](https://www.malter365.de/)
-heruntergeladen werden. Lokale Schnellbausteine werden durch Ablauf, Upgrade
-oder Deinstallation weder gelöscht noch verändert.
+Diese Version hat kein Ablaufdatum und sperrt ihre Funktionen nicht zeitgesteuert.
+Lokale Schnellbausteine werden durch Upgrade oder Deinstallation nicht gelöscht.
 
-> Die Vorabversion ist noch nicht digital signiert. Windows SmartScreen kann
-> deshalb beim ersten Start **Weitere Informationen > Trotzdem ausführen**
-> verlangen. Setup selbst benötigt keine erhöhten Rechte.
+> Die Vorabversion ist noch nicht digital signiert. Die fehlende Signatur ist
+> keine Erklärung oder Entwarnung für die aktuelle Defender-Erkennung.
 
 ## Bedienung
+
+Im noch unveröffentlichten Speicherpfad wird vor dem Namensdialog nur die
+Seitenstruktur einschließlich Auswahlmarkierungen (`piSelection`) aufgenommen.
+Erst nach Bestätigung des Namens lädt das Add-in die Binärdaten der ausgewählten
+Bilder und vollständigen Freihandobjekte nach. Abbrechen lädt keine Binärdaten.
+Die Auswahl wird nach dem Dialog nicht erneut gelesen.
 
 1. Inhalt auf einer OneNote-Seite markieren.
 2. Im Kontextmenü von Text, Outline-Handle, Tabelle oder Freihandauswahl
@@ -81,6 +96,16 @@ Menüeintrag liest der verzögerte STA-Einfügepfad die Seite einschließlich
 `piBinaryDataSelection`. Fehlt die Cursor- oder Auswahlmarkierung oder ist sie
 mehrdeutig, bricht das Add-in sichtbar ab, statt an einer geratenen
 Outline-Position einzufügen.
+
+Der unveröffentlichte Einfügepfad arbeitet auf einer Kopie der gelesenen Seite.
+An OneNote werden ausschließlich der vollständige geänderte Ziel-Outline mit
+seiner bestehenden `objectID` und neue `TagDef`-/`QuickStyleDef`-Definitionen
+gesendet. Unveränderte Originalzeichnungen, Bilder, Titel, andere Outlines und
+unbekannte Seitendaten bleiben außerhalb dieses Updates. Änderungen außerhalb
+des Zielcontainers, fehlende oder doppelte Objekt-IDs sowie Änderungen an
+bestehenden Formatdefinitionen führen zum sichtbaren Abbruch. OneNotes
+Änderungszeitpunkt-Prüfung bleibt aktiv. Dieser Pfad ist automatisiert am
+COM-Adapter geprüft, aber noch nicht im realen OneNote validiert.
 
 Menü, Tastatursteuerung, Escape und Click-away werden vollständig von Office
 bereitgestellt; das Add-in öffnet keine eigene Popup-Oberfläche.
@@ -130,8 +155,15 @@ diese optionale Angabe bleiben lesbar und verändern die Zielbreite nicht.
   sicher abgelehnt.
 - Eine Lasso-Auswahl wird nicht offline auf einzelne Striche zugeschnitten.
   Gespeichert wird ausschließlich ein vollständiger `InkDrawing`-Blob, den
-  OneNote selbst in `piBinaryDataSelection` als eigenständige Binärdaten
+  OneNote selbst als eigenständige Binärdaten
   liefert. Fehlen diese Daten, bricht der Speichervorgang sichtbar ab.
+- Tester melden für Beta 0.2.5 weiterhin falsche Anordnung zusammengesetzter
+  Zeichnungen und einfarbige Rainbow-Striche. Die XML-Roundtrip-Tests belegen
+  keine originalgetreue Darstellung in OneNote; diese Fehler sind noch offen.
+- Als Schutz vor Farbverlust verweigert der unveröffentlichte Add-in-Stand
+  Einfügen, sobald der Ziel-Textcontainer oder Baustein `InkDrawing` enthält.
+  Freihand in anderen Containern oder direkt auf der Seite wird nicht erneut
+  geschrieben und sperrt einen getrennten Textcontainer nicht mehr.
 - Hyperlink-/MathML-Spezialcursor werden absichtlich nur an einer sicheren
   Absatzgrenze behandelt, damit kein Inhalt verloren geht.
 
@@ -169,9 +201,9 @@ Dispatch-Bindung.
 ```powershell
 .\test.ps1 -Configuration Release -Platform x86
 .\test.ps1 -Configuration Release -Platform x64
-.\installer\Build-Setup.ps1 -Version 0.2.0-beta.1
+.\installer\Build-Setup.ps1 -Version 0.2.5-beta.1
 .\tests\Test-OneNoteStartup.ps1 `
-    -SetupPath .\artifacts\setup\OneNote-Schnellbausteine-Setup-Beta-0.2.exe
+    -SetupPath .\artifacts\setup\OneNote-Schnellbausteine-Setup-Beta-0.2.5.exe
 ```
 
 Die Build-Ausgaben liegen unter `artifacts\<Plattform>\<Konfiguration>`, Setup
@@ -186,6 +218,11 @@ vollständige DllHost-Lifecycle läuft lokal standardmäßig in `Test-Setup.ps1`
 tatsächlich installierten OneNote Desktop. OneNote muss davor vollständig
 geschlossen sein. Bei einem Tag `v*` wird Setup automatisch an ein GitHub
 Release angehängt.
+
+Die automatisierten XML-Roundtrip-Tests prüfen die Bewahrung der Ink-Daten und
+Rendering-Metadaten sowie die relative Position mehrerer Striche. Ein echter
+OneNote-Desktop-Test ist davon nicht ersetzt: Regenbogenstift-Darstellung und
+räumliche Positionierung müssen in OneNote manuell validiert werden.
 
 Die PowerShell-Skripte bleiben als Entwickler-Fallback verfügbar:
 
@@ -237,12 +274,11 @@ Damit folgt der Einfügepfad wie OneMores öffentlich beschriebenes
 Selection-Range statt einer globalen Outline-Suche, ohne OneMore-Code zu
 übernehmen.
 
-Die Beta-Laufzeit wird ausschließlich anhand der lokalen Windows-Kalenderzeit
-durch eine zentrale Policy bestimmt. Es gibt keine Netzwerkprüfung, Telemetrie
-oder persistierte Uhrzeitkontrolle. Der Start-Hinweis wird erst nach Rückkehr aus
-dem COM-Lifecycle-Callback auf den bestehenden UI-STA gestellt. Nach Ablauf
-prüfen sämtliche Aktionen die Policy erneut, bevor Repository-, OneNote-COM-
-oder Fachdialogzugriffe stattfinden.
+Beim Erfassen von Freihand werden die seitenbezogenen Ink-Positionen in ein
+gemeinsames relatives Koordinatensystem überführt und beim Einfügen gemeinsam
+am Ziel-Outline verankert. Die Ink-Binärdaten und Rendering-XML bleiben dabei
+erhalten. Die tatsächliche Darstellung des Regenbogenstifts und die Positionen
+der Striche müssen zusätzlich in OneNote manuell geprüft werden.
 
 ### Experimenteller OneNote-Realtest
 

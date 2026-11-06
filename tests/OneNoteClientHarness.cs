@@ -14,30 +14,6 @@ namespace Schnellbausteine.Tests
 {
     internal static class OneNoteClientHarness
     {
-        private sealed class FakeClock : ILocalClock
-        {
-            public DateTimeOffset Value;
-
-            public DateTimeOffset LocalNow
-            {
-                get { return Value; }
-            }
-        }
-
-        private sealed class FakeNoticePresenter : IBetaNoticePresenter
-        {
-            public readonly AutoResetEvent Shown = new AutoResetEvent(false);
-            public int Count;
-            public BetaStatus Status;
-
-            public void Show(BetaStatus status, IntPtr ownerHandle)
-            {
-                Status = status;
-                Interlocked.Increment(ref Count);
-                Shown.Set();
-            }
-        }
-
         private sealed class FakeRibbonControl : Microsoft.Office.Core.IRibbonControl
         {
             private readonly string id;
@@ -52,23 +28,13 @@ namespace Schnellbausteine.Tests
             public string Tag { get { return string.Empty; } }
         }
 
-        private sealed class FakeWebsiteLauncher : IWebsiteLauncher
-        {
-            public Uri Website;
-            public Exception Exception;
-
-            public void Open(Uri website)
-            {
-                Website = website;
-                if (Exception != null) throw Exception;
-            }
-        }
-
         private sealed class FakeApplication : IOneNoteApplicationAdapter
         {
             public readonly List<string> Calls;
             public Exception UpdateException;
             public string BinaryData;
+            public string PageXml;
+            public string UpdatedXml;
 
             public FakeApplication(List<string> calls)
             {
@@ -77,6 +43,11 @@ namespace Schnellbausteine.Tests
 
             public OneNoteWindowInfo GetCurrentWindow()
             {
+                if (PageXml != null)
+                {
+                    Calls.Add("window");
+                    return new OneNoteWindowInfo { PageId = "capture-page", WindowHandle = new IntPtr(123) };
+                }
                 throw new NotSupportedException();
             }
 
@@ -87,6 +58,7 @@ namespace Schnellbausteine.Tests
             {
                 Calls.Add(
                     "read:" + pageId + ":" + includeBinaryData + ":" + includeSelection);
+                if (PageXml != null) return PageXml;
                 throw new InvalidOperationException(
                     "Nach dem Update darf die Seite nicht erneut gelesen werden.");
             }
@@ -100,6 +72,7 @@ namespace Schnellbausteine.Tests
             public void UpdatePageContent(string xml, DateTime expectedLastModifiedTime)
             {
                 Calls.Add("update");
+                UpdatedXml = xml;
                 if (UpdateException != null) throw UpdateException;
             }
 
@@ -137,6 +110,7 @@ namespace Schnellbausteine.Tests
             public readonly List<string> Calls;
             public IntPtr ForegroundWindow = new IntPtr(200);
             public IntPtr FocusedWindow = new IntPtr(101);
+            public IntPtr RootWindow = new IntPtr(100);
             public bool Iconic;
             public bool SetForegroundResult = true;
             public bool BringToTopResult = true;
@@ -186,6 +160,12 @@ namespace Schnellbausteine.Tests
                 return ForegroundWindow;
             }
 
+            public IntPtr GetRootWindow(IntPtr windowHandle)
+            {
+                Calls.Add("root:" + windowHandle.ToInt64());
+                return RootWindow;
+            }
+
             public uint GetWindowThreadProcessId(
                 IntPtr windowHandle,
                 out uint processId)
@@ -221,7 +201,7 @@ namespace Schnellbausteine.Tests
             public bool IsWindow(IntPtr windowHandle)
             {
                 Calls.Add("window:" + windowHandle.ToInt64());
-                return windowHandle == new IntPtr(100);
+                return windowHandle == new IntPtr(100) || windowHandle == new IntPtr(101);
             }
 
             public bool SetForegroundWindow(IntPtr windowHandle)
@@ -255,21 +235,29 @@ namespace Schnellbausteine.Tests
                 MenuInvalidationRejectsStaleIdsAndReloadsCrud();
                 TargetAlreadyForegroundAcceptsSetForegroundFalse();
                 CurrentForegroundAndTargetThreadsAreAttached();
+                WorkspaceChildActivatesTheRootFrame();
+                MissingRootNeverActivatesAWindow();
+                InvalidRootNeverActivatesAWindow();
+                InvalidWorkspaceNeverResolvesOrActivatesAWindow();
                 AttachedThreadsAreDetachedInFinally();
                 MinimizedTargetIsRestoredBeforeActivation();
                 RejectedActivationDoesNotFailInsert();
                 BinaryCallbacksUseCapturedPageOnClientThread();
-                ExpirationPolicyUsesExactLocalBoundaries();
-                StartupNoticeIsDeferredOncePerLifecycle();
-                StartupNoticeIsAbsentBeforeWarningPeriod();
-                ExpiredStartupNoticeIsDeferred();
-                ShutdownCancelsQueuedStartupNotice();
-                ExpiredActionsAreBlockedBeforeCommandBodies();
-                WarningActionsRemainEnabled();
-                ExpiredMenuHidesNamesAndStaleItemsAreBlocked();
-                ExpiredDownloadCallbackShowsNotice();
-                WebsiteUsesExactHttpsUriAndSurfacesErrors();
-                Console.WriteLine("23/23 OneNote-Client-Harness-Tests erfolgreich.");
+                CaptureReadDefersBinaryAndPreservesSelectedPage();
+                InsertReadStillIncludesPageBinaryData();
+                InkInTargetContainerBlocksInsertWithoutMutation();
+                InkSnippetBlocksInsertWithoutMutation();
+                DirectInkUpdateIsBlockedBeforeCom();
+                TextOnlyInsertStillUpdatesThePage();
+                ScopedInsertOmitsUnrelatedInkAndPageObjects();
+                ScopedInsertRejectsChangesOutsideTarget();
+                ScopedInsertIncludesOnlyNewDefinitions();
+                UnidentifiedTargetNeverUpdates();
+                ScopedBlockInsertRetainsCompleteTargetContent();
+                FailedScopedUpdateLeavesSourceUnchanged();
+                ExpirationSurfaceIsRemoved();
+                FeatureActionsRemainAvailableWithoutClock();
+                Console.WriteLine("31/31 OneNote-Client-Harness-Tests erfolgreich.");
                 return 0;
             }
             catch (Exception exception)
@@ -526,6 +514,54 @@ namespace Schnellbausteine.Tests
                 "attach:10:20:False");
         }
 
+        private static void WorkspaceChildActivatesTheRootFrame()
+        {
+            var calls = new List<string>();
+            var native = new FakeWindowNative(calls);
+
+            new OneNoteWindowActivator(native).Activate(new IntPtr(101));
+
+            Ordered(calls, "root:101", "set:100", "bring:100", "child:100:101");
+            Equal(false, calls.Contains("set:101"));
+            Equal(false, calls.Contains("bring:101"));
+        }
+
+        private static void MissingRootNeverActivatesAWindow()
+        {
+            var calls = new List<string>();
+            var native = new FakeWindowNative(calls) { RootWindow = IntPtr.Zero };
+
+            new OneNoteWindowActivator(native).Activate(new IntPtr(101));
+
+            Contains(calls, "root:101");
+            Equal(false, calls.Any(call => call.StartsWith("set:", StringComparison.Ordinal)));
+            Equal(false, calls.Any(call => call.StartsWith("attach:", StringComparison.Ordinal)));
+        }
+
+        private static void InvalidRootNeverActivatesAWindow()
+        {
+            var calls = new List<string>();
+            var native = new FakeWindowNative(calls) { RootWindow = new IntPtr(999) };
+
+            new OneNoteWindowActivator(native).Activate(new IntPtr(101));
+
+            Contains(calls, "root:101");
+            Equal(false, calls.Any(call => call.StartsWith("set:", StringComparison.Ordinal)));
+            Equal(false, calls.Any(call => call.StartsWith("attach:", StringComparison.Ordinal)));
+        }
+
+        private static void InvalidWorkspaceNeverResolvesOrActivatesAWindow()
+        {
+            foreach (IntPtr handle in new[] { IntPtr.Zero, new IntPtr(999) })
+            {
+                var calls = new List<string>();
+                new OneNoteWindowActivator(new FakeWindowNative(calls)).Activate(handle);
+                Equal(false, calls.Any(call => call.StartsWith("root:", StringComparison.Ordinal)));
+                Equal(false, calls.Any(call => call.StartsWith("set:", StringComparison.Ordinal)));
+                Equal(false, calls.Any(call => call.StartsWith("attach:", StringComparison.Ordinal)));
+            }
+        }
+
         private static void MinimizedTargetIsRestoredBeforeActivation()
         {
             var calls = new List<string>();
@@ -579,282 +615,370 @@ namespace Schnellbausteine.Tests
             Equal("binary:page-id:ink-callback", string.Join(",", calls));
         }
 
-        private static void ExpirationPolicyUsesExactLocalBoundaries()
+        private static void CaptureReadDefersBinaryAndPreservesSelectedPage()
         {
-            var clock = new FakeClock();
-            var policy = new ExpirationPolicy(clock);
-
-            clock.Value = new DateTimeOffset(
-                2026, 11, 30, 23, 59, 59, 999, TimeSpan.FromHours(14));
-            Equal(BetaStatus.Active, policy.CurrentStatus);
-            Equal(true, policy.AllowsFeatures);
-
-            clock.Value = new DateTimeOffset(
-                2026, 12, 1, 0, 0, 0, TimeSpan.FromHours(-8));
-            Equal(BetaStatus.Warning, policy.CurrentStatus);
-            Equal(true, policy.AllowsFeatures);
-
-            clock.Value = new DateTimeOffset(
-                2026, 12, 31, 23, 59, 59, 999, TimeSpan.FromHours(14));
-            Equal(BetaStatus.Warning, policy.CurrentStatus);
-            Equal(true, policy.AllowsFeatures);
-
-            clock.Value = new DateTimeOffset(
-                2027, 1, 1, 0, 0, 0, TimeSpan.FromHours(-8));
-            Equal(BetaStatus.Expired, policy.CurrentStatus);
-            Equal(false, policy.AllowsFeatures);
+            var calls = new List<string>();
+            var application = new FakeApplication(calls)
+            {
+                PageXml = "<one:Page xmlns:one=\"" + OneNoteXml.One +
+                    "\" lastModifiedTime=\"2026-11-06T10:00:00Z\">" +
+                    "<one:InkDrawing selected=\"all\" objectID=\"ink-object\"/>" +
+                    "<one:InkDrawing objectID=\"unselected-ink\"/>" +
+                    "</one:Page>",
+                BinaryData = "AQID"
+            };
+            using (var client = new OneNoteClient(application, new FakeWindowActivator(calls)))
+            {
+                XDocument capturedPage = client.ReadCurrentPageForCapture();
+                Equal("window,read:capture-page:False:True", string.Join(",", calls));
+                // Changing focus while naming must not trigger another page/selection read.
+                application.PageXml = Page().ToString();
+                XDocument fragment = OneNoteXml.ExtractSelection(capturedPage, client.ReadBinary);
+                Equal("AQID", fragment.Descendants(OneNoteXml.One + "Data").Single().Value);
+            }
+            Equal("window,read:capture-page:False:True,binary:capture-page:ink-object",
+                string.Join(",", calls));
         }
 
-        private static void StartupNoticeIsDeferredOncePerLifecycle()
+        private static void InsertReadStillIncludesPageBinaryData()
+        {
+            var calls = new List<string>();
+            XDocument page = Page();
+            page.Root.SetAttributeValue("lastModifiedTime", "2026-11-06T10:00:00Z");
+            var application = new FakeApplication(calls) { PageXml = page.ToString() };
+            using (var client = new OneNoteClient(application, new FakeWindowActivator(calls)))
+            {
+                client.ReadCurrentPage();
+            }
+            Equal("window,read:capture-page:True:True", string.Join(",", calls));
+        }
+
+        private static void InkInTargetContainerBlocksInsertWithoutMutation()
+        {
+            var calls = new List<string>();
+            var application = new FakeApplication(calls);
+            XDocument page = Page();
+            var ink = new XElement(OneNoteXml.One + "InkDrawing",
+                new XAttribute("objectID", "original-ink"),
+                new XElement(OneNoteXml.One + "Data", "AQID"));
+            page.Descendants(OneNoteXml.One + "OE").Single().Add(ink);
+            string original = page.ToString();
+            bool loaded = false;
+            using (var client = CreateClient(application, new FakeWindowActivator(calls)))
+            {
+                Throws<InvalidOperationException>(delegate
+                {
+                    InsertSnippetOperation.Execute(
+                        client, page, new Snippet { Id = "text" },
+                        delegate
+                        {
+                            loaded = true;
+                            return Fragment();
+                        });
+                });
+            }
+            Equal(false, loaded);
+            Equal(original, page.ToString());
+            Equal(0, calls.Count);
+            Equal(null, application.UpdatedXml);
+        }
+
+        private static void InkSnippetBlocksInsertWithoutMutation()
+        {
+            var calls = new List<string>();
+            var application = new FakeApplication(calls);
+            XDocument page = Page();
+            string original = page.ToString();
+            XDocument fragment = Fragment();
+            fragment.Descendants(OneNoteXml.One + "OE").Single().ReplaceNodes(
+                new XElement(OneNoteXml.One + "InkDrawing",
+                    new XElement(OneNoteXml.One + "Data", "AQID")));
+            string originalFragment = fragment.ToString();
+            using (var client = CreateClient(application, new FakeWindowActivator(calls)))
+            {
+                Throws<InvalidOperationException>(delegate
+                {
+                    InsertSnippetOperation.Execute(
+                        client, page, new Snippet { Id = "ink" },
+                        delegate { return fragment; });
+                });
+            }
+            Equal(original, page.ToString());
+            Equal(originalFragment, fragment.ToString());
+            Equal(0, calls.Count);
+            Equal(null, application.UpdatedXml);
+        }
+
+        private static void DirectInkUpdateIsBlockedBeforeCom()
+        {
+            var calls = new List<string>();
+            var application = new FakeApplication(calls);
+            XDocument page = Page();
+            page.Root.Add(new XElement(OneNoteXml.One + "InkDrawing"));
+            string original = page.ToString();
+            using (var client = CreateClient(application, new FakeWindowActivator(calls)))
+            {
+                Throws<InvalidOperationException>(delegate
+                {
+                    client.UpdateCurrentPageAndActivateWindow(page);
+                });
+            }
+            Equal(original, page.ToString());
+            Equal(0, calls.Count);
+            Equal(null, application.UpdatedXml);
+        }
+
+        private static void TextOnlyInsertStillUpdatesThePage()
+        {
+            var calls = new List<string>();
+            var application = new FakeApplication(calls);
+            using (var client = CreateClient(application, new FakeWindowActivator(calls)))
+            {
+                InsertSnippetOperation.Execute(
+                    client, Page(), new Snippet { Id = "text" },
+                    delegate { return Fragment(); });
+            }
+            Equal("update,activate:123", string.Join(",", calls));
+            XDocument updated = XDocument.Parse(application.UpdatedXml);
+            Equal(true, updated.Descendants(OneNoteXml.One + "T")
+                .Any(text => text.Value == "snippet"));
+            OneNoteXml.ValidatePostInsertCaret(updated);
+        }
+
+        private static void ScopedInsertOmitsUnrelatedInkAndPageObjects()
+        {
+            var calls = new List<string>();
+            var application = new FakeApplication(calls);
+            XDocument page = Page();
+            XNamespace one = OneNoteXml.One;
+            page.Root.Add(
+                new XElement(one + "InkDrawing", new XAttribute("objectID", "original-ink"),
+                    new XElement(one + "Data", "AQID")),
+                new XElement(one + "Outline", new XAttribute("objectID", "other-outline"),
+                    new XElement(one + "OEChildren", new XElement(one + "OE",
+                        new XElement(one + "InkDrawing", new XElement(one + "Data", "BAUG"))))),
+                new XElement(one + "Image", new XAttribute("objectID", "original-image")),
+                new XElement(one + "Title", new XElement(one + "OE",
+                    new XElement(one + "T", "Original title"))),
+                new XElement(one + "UnknownFutureData", "must not roundtrip"));
+            string original = page.ToString();
+            using (var client = CreateClient(application, new FakeWindowActivator(calls)))
+            {
+                InsertSnippetOperation.Execute(
+                    client, page, new Snippet { Id = "text" }, delegate { return Fragment(); });
+            }
+            Equal(original, page.ToString());
+            XDocument update = XDocument.Parse(application.UpdatedXml);
+            Equal("page-id", (string)update.Root.Attribute("ID"));
+            Equal(1, update.Root.Elements().Count());
+            Equal("target-outline", (string)update.Root.Elements().Single().Attribute("objectID"));
+            Equal(false, update.Descendants(one + "InkDrawing").Any());
+            Equal(false, update.Descendants(one + "Image").Any());
+            Equal(false, update.Descendants(one + "Title").Any());
+            Equal(false, update.Descendants(one + "UnknownFutureData").Any());
+            Equal("update,activate:123", string.Join(",", calls));
+            OneNoteXml.ValidatePostInsertCaret(update);
+        }
+
+        private static void ScopedInsertRejectsChangesOutsideTarget()
+        {
+            XNamespace one = OneNoteXml.One;
+            XDocument original = Page();
+            original.Root.Add(new XElement(one + "Outline",
+                new XAttribute("objectID", "other"), new XElement(one + "OEChildren")));
+            foreach (string change in new[] { "modify", "remove", "add" })
+            {
+                XDocument modified = new XDocument(original);
+                OneNoteXml.InsertAtSelection(modified, Fragment());
+                XElement other = modified.Root.Elements(one + "Outline").Last();
+                if (change == "modify") other.SetAttributeValue("style", "changed");
+                if (change == "remove") other.Remove();
+                if (change == "add") modified.Root.Add(new XElement(one + "Image"));
+                Throws<InvalidOperationException>(delegate
+                {
+                    InsertSnippetOperation.CreateScopedUpdate(
+                        original, modified, original.Root.Elements(one + "Outline").First());
+                });
+            }
+        }
+
+        private static void ScopedInsertIncludesOnlyNewDefinitions()
+        {
+            XNamespace one = OneNoteXml.One;
+            var calls = new List<string>();
+            var application = new FakeApplication(calls);
+            XDocument page = Page();
+            page.Root.AddFirst(
+                new XElement(one + "TagDef", new XAttribute("index", "0"),
+                    new XAttribute("name", "Existing"), new XAttribute("type", "0"),
+                    new XAttribute("symbol", "0")),
+                new XElement(one + "QuickStyleDef", new XAttribute("index", "0"),
+                    new XAttribute("name", "Existing"), new XAttribute("fontSize", "10.0")));
+            XDocument fragment = Fragment();
+            fragment.Root.Element(OneNoteXml.Snippet + "TagDefs").Add(
+                new XElement(one + "TagDef", new XAttribute("index", "0"),
+                    new XAttribute("name", "New"), new XAttribute("type", "0"),
+                    new XAttribute("symbol", "1")));
+            fragment.Root.Element(OneNoteXml.Snippet + "QuickStyleDefs").Add(
+                new XElement(one + "QuickStyleDef", new XAttribute("index", "0"),
+                    new XAttribute("name", "New"), new XAttribute("fontSize", "18.0")));
+            XElement paragraph = fragment.Descendants(one + "OE").Single();
+            paragraph.SetAttributeValue("quickStyleIndex", "0");
+            paragraph.AddFirst(new XElement(one + "Tag", new XAttribute("index", "0")));
+            string original = page.ToString();
+            using (var client = CreateClient(application, new FakeWindowActivator(calls)))
+            {
+                InsertSnippetOperation.Execute(
+                    client, page, new Snippet { Id = "formatted" }, delegate { return fragment; });
+            }
+            Equal(original, page.ToString());
+            XDocument update = XDocument.Parse(application.UpdatedXml);
+            Equal(3, update.Root.Elements().Count());
+            Equal("New", (string)update.Root.Element(one + "TagDef").Attribute("name"));
+            Equal("New", (string)update.Root.Element(one + "QuickStyleDef").Attribute("name"));
+            Equal("1", (string)update.Root.Element(one + "TagDef").Attribute("index"));
+            Equal("1", (string)update.Descendants(one + "Tag").Single().Attribute("index"));
+            Equal("1", (string)update.Descendants(one + "OE")
+                .First(element => element.Attribute("quickStyleIndex") != null)
+                .Attribute("quickStyleIndex"));
+            OneNoteXml.ValidatePostInsertCaret(update);
+
+            XDocument modified = new XDocument(page);
+            OneNoteXml.InsertAtSelection(modified, Fragment());
+            modified.Root.Element(one + "QuickStyleDef").SetAttributeValue("fontSize", "99");
+            Throws<InvalidOperationException>(delegate
+            {
+                InsertSnippetOperation.CreateScopedUpdate(
+                    page, modified, page.Root.Element(one + "Outline"));
+            });
+        }
+
+        private static void UnidentifiedTargetNeverUpdates()
+        {
+            foreach (string invalid in new[] { "page-id", "outline-id", "duplicate" })
+            {
+                var calls = new List<string>();
+                var application = new FakeApplication(calls);
+                XDocument page = Page();
+                if (invalid == "page-id") page.Root.Attribute("ID").Remove();
+                if (invalid == "outline-id")
+                    page.Root.Element(OneNoteXml.One + "Outline").Attribute("objectID").Remove();
+                if (invalid == "duplicate")
+                    page.Root.Add(new XElement(OneNoteXml.One + "Outline",
+                        new XAttribute("objectID", "target-outline")));
+                using (var client = CreateClient(application, new FakeWindowActivator(calls)))
+                {
+                    Throws<InvalidOperationException>(delegate
+                    {
+                        InsertSnippetOperation.Execute(
+                            client, page, new Snippet { Id = "text" },
+                            delegate { return Fragment(); });
+                    });
+                }
+                Equal(0, calls.Count);
+            }
+        }
+
+        private static void ScopedBlockInsertRetainsCompleteTargetContent()
+        {
+            XNamespace one = OneNoteXml.One;
+            var calls = new List<string>();
+            var application = new FakeApplication(calls);
+            XDocument page = Page();
+            XElement outline = page.Root.Element(one + "Outline");
+            outline.AddFirst(new XElement(one + "Position",
+                new XAttribute("x", "100"), new XAttribute("y", "200")),
+                new XElement(one + "Size", new XAttribute("width", "300"),
+                    new XAttribute("height", "100")));
+            outline.Element(one + "OEChildren").Add(
+                new XElement(one + "OE", new XAttribute("objectID", "existing-paragraph"),
+                    new XElement(one + "T", "Keep this"),
+                    new XElement(one + "Image", new XAttribute("format", "png"),
+                        new XElement(one + "Data", "AQID"))));
+            XDocument fragment = Fragment();
+            fragment.Root.Element(OneNoteXml.Snippet + "Content").Add(
+                new XElement(one + "OE", new XElement(one + "T", "Second paragraph")));
+            string original = page.ToString();
+            using (var client = CreateClient(application, new FakeWindowActivator(calls)))
+            {
+                InsertSnippetOperation.Execute(
+                    client, page, new Snippet { Id = "blocks" }, delegate { return fragment; });
+            }
+            Equal(original, page.ToString());
+            XDocument update = XDocument.Parse(application.UpdatedXml);
+            Equal("100", (string)update.Root.Element(one + "Outline")
+                .Element(one + "Position").Attribute("x"));
+            Equal("snippet,Second paragraph,,Keep this",
+                string.Join(",", update.Descendants(one + "T").Select(text => text.Value)));
+            Equal("AQID", update.Descendants(one + "Image").Single().Element(one + "Data").Value);
+            Equal("existing-paragraph", (string)update.Descendants(one + "Image")
+                .Single().Parent.Attribute("objectID"));
+            OneNoteXml.ValidatePostInsertCaret(update);
+        }
+
+        private static void FailedScopedUpdateLeavesSourceUnchanged()
+        {
+            var calls = new List<string>();
+            var application = new FakeApplication(calls)
+            {
+                UpdateException = new COMException("Concurrent modification")
+            };
+            XDocument page = Page();
+            string original = page.ToString();
+            using (var client = CreateClient(application, new FakeWindowActivator(calls)))
+            {
+                Throws<COMException>(delegate
+                {
+                    InsertSnippetOperation.Execute(
+                        client, page, new Snippet { Id = "text" }, delegate { return Fragment(); });
+                });
+            }
+            Equal(original, page.ToString());
+            Equal("update", string.Join(",", calls));
+        }
+
+        private static void ExpirationSurfaceIsRemoved()
+        {
+            var assembly = typeof(Schnellbausteine.AddIn.AddIn).Assembly;
+            Equal(null, assembly.GetType("Schnellbausteine.AddIn.ExpirationPolicy", false));
+            Equal(null, assembly.GetType("Schnellbausteine.AddIn.BetaNoticeForm", false));
+            Equal(null, typeof(Schnellbausteine.AddIn.AddIn).GetMethod("ShowBetaDownload"));
+            Equal(null, typeof(Schnellbausteine.AddIn.AddIn).GetMethod("GetFeatureEnabled"));
+        }
+
+        private static void FeatureActionsRemainAvailableWithoutClock()
         {
             WithTemporaryRepository(delegate(SnippetRepository repository)
             {
-                var clock = new FakeClock
-                {
-                    Value = new DateTimeOffset(
-                        2026, 12, 1, 0, 0, 0, TimeSpan.FromHours(1))
-                };
-                var presenter = new FakeNoticePresenter();
-                var addIn = new Schnellbausteine.AddIn.AddIn(
-                    repository,
-                    new ExpirationPolicy(clock),
-                    presenter);
+                Snippet snippet = repository.Save("Unbefristet", Fragment(), false);
+                var addIn = new Schnellbausteine.AddIn.AddIn(repository);
+                var inserted = new AutoResetEvent(false);
+                SetAction(addIn, "insertSnippetAction", new Action<Snippet, IntPtr>(
+                    delegate(Snippet value, IntPtr ownerHandle)
+                    {
+                        Equal(snippet.Id, value.Id);
+                        inserted.Set();
+                    }));
                 try
                 {
-                    Array custom = new object[0];
-                    addIn.OnStartupComplete(ref custom);
-                    Equal(0, presenter.Count);
-                    Equal(true, presenter.Shown.WaitOne(TimeSpan.FromSeconds(5)));
-                    Equal(BetaStatus.Warning, presenter.Status);
-
-                    addIn.OnStartupComplete(ref custom);
-                    Equal(false, presenter.Shown.WaitOne(TimeSpan.FromMilliseconds(300)));
-                    Equal(1, presenter.Count);
+                    XDocument menu = XDocument.Parse(addIn.GetSnippetMenuContent(
+                        new FakeRibbonControl("sqMain")));
+                    string controlId = (string)menu.Root.Elements()
+                        .First(element => (string)element.Attribute("onAction") == "InsertSnippet")
+                        .Attribute("id");
+                    addIn.InsertSnippet(new FakeRibbonControl(controlId));
+                    Equal(true, inserted.WaitOne(TimeSpan.FromSeconds(5)));
+                    string ribbon = addIn.GetCustomUI(null);
+                    Equal(false, ribbon.Contains("GetFeatureEnabled"));
+                    Equal(false, ribbon.Contains("ShowBetaDownload"));
                 }
                 finally
                 {
                     Disconnect(addIn);
-                    presenter.Shown.Dispose();
+                    inserted.Dispose();
                 }
             });
         }
-
-        private static void StartupNoticeIsAbsentBeforeWarningPeriod()
-        {
-            WithTemporaryRepository(delegate(SnippetRepository repository)
-            {
-                var clock = new FakeClock
-                {
-                    Value = new DateTimeOffset(
-                        2026, 11, 30, 23, 59, 59, 999, TimeSpan.Zero)
-                };
-                var presenter = new FakeNoticePresenter();
-                var addIn = new Schnellbausteine.AddIn.AddIn(
-                    repository,
-                    new ExpirationPolicy(clock),
-                    presenter);
-                try
-                {
-                    Array custom = new object[0];
-                    addIn.OnStartupComplete(ref custom);
-                    Equal(false, presenter.Shown.WaitOne(TimeSpan.FromMilliseconds(300)));
-                    Equal(0, presenter.Count);
-                }
-                finally
-                {
-                    Disconnect(addIn);
-                    presenter.Shown.Dispose();
-                }
-            });
-        }
-
-        private static void ExpiredActionsAreBlockedBeforeCommandBodies()
-        {
-            WithTemporaryRepository(delegate(SnippetRepository repository)
-            {
-                var clock = new FakeClock
-                {
-                    Value = new DateTimeOffset(2027, 1, 1, 0, 0, 0, TimeSpan.Zero)
-                };
-                var presenter = new FakeNoticePresenter();
-                var addIn = new Schnellbausteine.AddIn.AddIn(
-                    repository,
-                    new ExpirationPolicy(clock),
-                    presenter);
-                int commandCalls = 0;
-                SetAction(addIn, "saveSelectionAction", new Action<IntPtr>(
-                    delegate { Interlocked.Increment(ref commandCalls); }));
-                SetAction(addIn, "manageSnippetsAction", new Action<IntPtr>(
-                    delegate { Interlocked.Increment(ref commandCalls); }));
-                try
-                {
-                    Equal(false, addIn.GetFeatureEnabled(null));
-                    addIn.SaveSelection(null);
-                    Equal(true, presenter.Shown.WaitOne(TimeSpan.FromSeconds(5)));
-                    addIn.ManageSnippets(null);
-                    Equal(true, presenter.Shown.WaitOne(TimeSpan.FromSeconds(5)));
-                    Equal(0, commandCalls);
-                    Equal(2, presenter.Count);
-                }
-                finally
-                {
-                    Disconnect(addIn);
-                    presenter.Shown.Dispose();
-                }
-            });
-        }
-
-        private static void ExpiredStartupNoticeIsDeferred()
-        {
-            WithTemporaryRepository(delegate(SnippetRepository repository)
-            {
-                var clock = new FakeClock
-                {
-                    Value = new DateTimeOffset(2027, 1, 1, 0, 0, 0, TimeSpan.Zero)
-                };
-                var presenter = new FakeNoticePresenter();
-                var addIn = new Schnellbausteine.AddIn.AddIn(
-                    repository,
-                    new ExpirationPolicy(clock),
-                    presenter);
-                try
-                {
-                    Array custom = new object[0];
-                    addIn.OnStartupComplete(ref custom);
-                    Equal(0, presenter.Count);
-                    Equal(true, presenter.Shown.WaitOne(TimeSpan.FromSeconds(5)));
-                    Equal(BetaStatus.Expired, presenter.Status);
-                }
-                finally
-                {
-                    Disconnect(addIn);
-                    presenter.Shown.Dispose();
-                }
-            });
-        }
-
-        private static void ShutdownCancelsQueuedStartupNotice()
-        {
-            WithTemporaryRepository(delegate(SnippetRepository repository)
-            {
-                var clock = new FakeClock
-                {
-                    Value = new DateTimeOffset(2026, 12, 1, 0, 0, 0, TimeSpan.Zero)
-                };
-                var presenter = new FakeNoticePresenter();
-                var addIn = new Schnellbausteine.AddIn.AddIn(
-                    repository,
-                    new ExpirationPolicy(clock),
-                    presenter);
-                try
-                {
-                    Array custom = new object[0];
-                    addIn.OnStartupComplete(ref custom);
-                    addIn.OnBeginShutdown(ref custom);
-                    Equal(false, presenter.Shown.WaitOne(TimeSpan.FromMilliseconds(400)));
-                    Equal(0, presenter.Count);
-                }
-                finally
-                {
-                    Disconnect(addIn);
-                    presenter.Shown.Dispose();
-                }
-            });
-        }
-
-        private static void WarningActionsRemainEnabled()
-        {
-            WithTemporaryRepository(delegate(SnippetRepository repository)
-            {
-                var clock = new FakeClock
-                {
-                    Value = new DateTimeOffset(2026, 12, 31, 23, 59, 59, 999, TimeSpan.Zero)
-                };
-                var presenter = new FakeNoticePresenter();
-                var addIn = new Schnellbausteine.AddIn.AddIn(
-                    repository,
-                    new ExpirationPolicy(clock),
-                    presenter);
-                var called = new AutoResetEvent(false);
-                SetAction(addIn, "saveSelectionAction", new Action<IntPtr>(
-                    delegate { called.Set(); }));
-                try
-                {
-                    Equal(true, addIn.GetFeatureEnabled(null));
-                    addIn.SaveSelection(null);
-                    Equal(true, called.WaitOne(TimeSpan.FromSeconds(5)));
-                    Equal(0, presenter.Count);
-                }
-                finally
-                {
-                    Disconnect(addIn);
-                    called.Dispose();
-                    presenter.Shown.Dispose();
-                }
-            });
-        }
-
-        private static void ExpiredMenuHidesNamesAndStaleItemsAreBlocked()
-        {
-            WithTemporaryRepository(delegate(SnippetRepository repository)
-            {
-                repository.Save("Vertraulicher Name", Fragment(), false);
-                var clock = new FakeClock
-                {
-                    Value = new DateTimeOffset(2026, 12, 31, 23, 0, 0, TimeSpan.Zero)
-                };
-                var presenter = new FakeNoticePresenter();
-                var addIn = new Schnellbausteine.AddIn.AddIn(
-                    repository,
-                    new ExpirationPolicy(clock),
-                    presenter);
-                var menu = new SnippetMenuModel(repository);
-                XDocument active = XDocument.Parse(
-                    menu.RefreshAndGetContent("sqMain"));
-                string staleId = (string)active.Root.Elements().First().Attribute("id");
-                SetField(addIn, "menu", menu);
-                clock.Value = new DateTimeOffset(2027, 1, 1, 0, 0, 0, TimeSpan.Zero);
-                int insertCalls = 0;
-                SetAction(
-                    addIn,
-                    "insertSnippetAction",
-                    new Action<Snippet, IntPtr>(
-                        delegate { Interlocked.Increment(ref insertCalls); }));
-                try
-                {
-                    clock.Value =
-                        new DateTimeOffset(2026, 11, 30, 23, 59, 59, TimeSpan.Zero);
-                    AssertManageMenus(addIn);
-                    clock.Value =
-                        new DateTimeOffset(2026, 12, 31, 23, 0, 0, TimeSpan.Zero);
-                    AssertManageMenus(addIn);
-
-                    clock.Value = new DateTimeOffset(
-                        2027, 1, 1, 0, 0, 0, TimeSpan.Zero);
-                    string expiredXml = addIn.GetSnippetMenuContent(null);
-                    XDocument expired = XDocument.Parse(expiredXml);
-                    XElement[] items = expired.Root.Elements().ToArray();
-                    Equal(1, items.Length);
-                    Equal("Aktuelle Version herunterladen...",
-                        (string)items[0].Attribute("label"));
-                    Equal("ShowBetaDownload", (string)items[0].Attribute("onAction"));
-                    Equal(false, expiredXml.Contains("Vertraulicher Name"));
-                    Equal(false, expiredXml.Contains("Schnellbausteine verwalten"));
-
-                    addIn.InsertSnippet(null);
-                    Equal(true, presenter.Shown.WaitOne(TimeSpan.FromSeconds(5)));
-                    Equal(0, insertCalls);
-                    Throws<InvalidOperationException>(
-                        delegate { menu.GetSnippet(staleId); });
-                }
-                finally
-                {
-                    Disconnect(addIn);
-                    presenter.Shown.Dispose();
-                }
-            });
-        }
-
         private static void AssertManageMenus(Schnellbausteine.AddIn.AddIn addIn)
         {
             string[] menuIds =
@@ -879,53 +1003,6 @@ namespace Schnellbausteine.Tests
                 Equal(false,
                     contentXml.Contains("OneNote Schnellbausteine verwalten"));
             }
-        }
-
-        private static void WebsiteUsesExactHttpsUriAndSurfacesErrors()
-        {
-            var launcher = new FakeWebsiteLauncher();
-            Exception visibleError = null;
-            BetaWebsite.Open(launcher, delegate(Exception exception)
-            {
-                visibleError = exception;
-            });
-            Equal("https://www.malter365.de/", launcher.Website.AbsoluteUri);
-            Equal(null, visibleError);
-
-            launcher.Exception = new InvalidOperationException("browser failed");
-            BetaWebsite.Open(launcher, delegate(Exception exception)
-            {
-                visibleError = exception;
-            });
-            Equal(launcher.Exception, visibleError);
-        }
-
-        private static void ExpiredDownloadCallbackShowsNotice()
-        {
-            WithTemporaryRepository(delegate(SnippetRepository repository)
-            {
-                var clock = new FakeClock
-                {
-                    Value = new DateTimeOffset(2027, 1, 1, 0, 0, 0, TimeSpan.Zero)
-                };
-                var presenter = new FakeNoticePresenter();
-                var addIn = new Schnellbausteine.AddIn.AddIn(
-                    repository,
-                    new ExpirationPolicy(clock),
-                    presenter);
-                try
-                {
-                    addIn.ShowBetaDownload(null);
-                    Equal(true, presenter.Shown.WaitOne(TimeSpan.FromSeconds(5)));
-                    Equal(BetaStatus.Expired, presenter.Status);
-                    Equal(1, presenter.Count);
-                }
-                finally
-                {
-                    Disconnect(addIn);
-                    presenter.Shown.Dispose();
-                }
-            });
         }
 
         private static void SetAction(object instance, string fieldName, object action)
@@ -964,8 +1041,8 @@ namespace Schnellbausteine.Tests
         private static XDocument Page()
         {
             return XDocument.Parse(
-                "<one:Page xmlns:one=\"" + OneNoteXml.One + "\">" +
-                "<one:Outline><one:OEChildren><one:OE>" +
+                "<one:Page xmlns:one=\"" + OneNoteXml.One + "\" ID=\"page-id\">" +
+                "<one:Outline objectID=\"target-outline\"><one:OEChildren><one:OE>" +
                 "<one:T selected=\"all\"><![CDATA[]]></one:T>" +
                 "</one:OE></one:OEChildren></one:Outline></one:Page>",
                 LoadOptions.PreserveWhitespace);

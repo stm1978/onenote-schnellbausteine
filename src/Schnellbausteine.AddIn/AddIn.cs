@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -24,8 +25,6 @@ namespace Schnellbausteine.AddIn
     {
         private readonly SnippetRepository repository;
         private readonly SnippetMenuModel menu;
-        private readonly ExpirationPolicy expirationPolicy;
-        private readonly IBetaNoticePresenter betaNoticePresenter;
         private static readonly string[] SnippetMenuControlIds =
         {
             "sqMain",
@@ -40,37 +39,16 @@ namespace Schnellbausteine.AddIn
         private Action<IntPtr> manageSnippetsAction;
         private IRibbonUI ribbonUi;
         private int operationActive;
-        private int startupNoticeQueued;
-        private int noticeActive;
-        private int shuttingDown;
 
         public AddIn()
-            : this(
-                new SnippetRepository(SnippetRepository.DefaultRoot),
-                new ExpirationPolicy(new SystemLocalClock()),
-                new WinFormsBetaNoticePresenter(new ShellWebsiteLauncher()))
+            : this(new SnippetRepository(SnippetRepository.DefaultRoot))
         {
         }
 
         internal AddIn(SnippetRepository repository)
-            : this(
-                repository,
-                new ExpirationPolicy(new SystemLocalClock()),
-                new WinFormsBetaNoticePresenter(new ShellWebsiteLauncher()))
-        {
-        }
-
-        internal AddIn(
-            SnippetRepository repository,
-            ExpirationPolicy expirationPolicy,
-            IBetaNoticePresenter betaNoticePresenter)
         {
             if (repository == null) throw new ArgumentNullException("repository");
-            if (expirationPolicy == null) throw new ArgumentNullException("expirationPolicy");
-            if (betaNoticePresenter == null) throw new ArgumentNullException("betaNoticePresenter");
             this.repository = repository;
-            this.expirationPolicy = expirationPolicy;
-            this.betaNoticePresenter = betaNoticePresenter;
             menu = new SnippetMenuModel(repository);
             saveSelectionAction = SaveSelectionCore;
             insertSnippetAction = InsertSnippetCore;
@@ -90,21 +68,11 @@ namespace Schnellbausteine.AddIn
         public void OnStartupComplete(ref Array custom)
         {
             Log.Trace("addin.startup", "entry");
-            var callbackBodyCompleted = new TaskCompletionSource<object>();
-            try
-            {
-                QueueStartupNotice(callbackBodyCompleted.Task);
-            }
-            finally
-            {
-                callbackBodyCompleted.SetResult(null);
-                Log.Trace("addin.startup", "exit");
-            }
+            Log.Trace("addin.startup", "exit");
         }
 
         public void OnBeginShutdown(ref Array custom)
         {
-            Interlocked.Exchange(ref shuttingDown, 1);
             Log.Trace("addin.shutdown", "begin");
             try
             {
@@ -126,7 +94,6 @@ namespace Schnellbausteine.AddIn
         public void OnDisconnection(ext_DisconnectMode removeMode, ref Array custom)
         {
             Log.Trace("addin.disconnection", "entry");
-            Interlocked.Exchange(ref shuttingDown, 1);
             
             bool dispatcherStopped = dispatcher.Shutdown(TimeSpan.FromSeconds(5));
             if (!dispatcherStopped)
@@ -216,7 +183,6 @@ namespace Schnellbausteine.AddIn
                     "SaveSelection",
                     callbackBodyCompleted.Task,
                     "Der Schnellbaustein konnte nicht gespeichert werden.",
-                    true,
                     saveSelectionAction);
             }
             finally
@@ -226,63 +192,62 @@ namespace Schnellbausteine.AddIn
             }
         }
 
-        public bool GetFeatureEnabled(IRibbonControl control)
-        {
-            Log.Trace("callback.GetFeatureEnabled", "entry-no-com");
-            return expirationPolicy.AllowsFeatures;
-        }
-
         private void SaveSelectionCore(IntPtr fallbackOwnerHandle)
         {
             Log.Trace("command.SaveSelection", "entry");
-            XDocument fragment;
-            IntPtr ownerHandle;
             using (var oneNote = new OneNoteClient())
             {
-                Log.Trace("onenote.selection.extract", "before");
-                fragment = OneNoteXml.ExtractSelection(oneNote.ReadCurrentPage(), oneNote.ReadBinary);
-                Log.Trace("onenote.selection.extract", "after");
-                ownerHandle = oneNote.CurrentWindowHandle;
-            }
-
-            var owner = new WindowHandleOwner(
-                ownerHandle == IntPtr.Zero ? fallbackOwnerHandle : ownerHandle);
-            using (var dialog = new NameDialog("Als Schnellbaustein speichern", string.Empty))
-            {
-                while (true)
+                XDocument selectedPage = oneNote.ReadCurrentPageForCapture();
+                if (!OneNoteXml.HasSelection(selectedPage))
                 {
-                    Log.Trace("ui.NameDialog", "before");
-                    DialogResult dialogResult = dialog.ShowDialog(owner);
-                    Log.Trace("ui.NameDialog", "after-" + dialogResult);
-                    if (dialogResult != DialogResult.OK) break;
-                    if (dialog.SnippetName.Length == 0)
+                    throw new InvalidOperationException("OneNote meldet keine markierte Auswahl.");
+                }
+                IntPtr ownerHandle = oneNote.CurrentWindowHandle;
+                var owner = new WindowHandleOwner(
+                    ownerHandle == IntPtr.Zero ? fallbackOwnerHandle : ownerHandle);
+                using (var dialog = new NameDialog("Als Schnellbaustein speichern", string.Empty))
+                {
+                    while (true)
                     {
-                        Log.Trace("ui.NameRequiredMessage", "before");
-                        MessageBox.Show(owner, "Bitte einen Namen eingeben.", "Name erforderlich",
-                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        Log.Trace("ui.NameRequiredMessage", "after");
-                        continue;
-                    }
+                        Log.Trace("ui.NameDialog", "before");
+                        DialogResult dialogResult = dialog.ShowDialog(owner);
+                        Log.Trace("ui.NameDialog", "after-" + dialogResult);
+                        if (dialogResult != DialogResult.OK) break;
+                        if (dialog.SnippetName.Length == 0)
+                        {
+                            Log.Trace("ui.NameRequiredMessage", "before");
+                            MessageBox.Show(owner, "Bitte einen Namen eingeben.", "Name erforderlich",
+                                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            Log.Trace("ui.NameRequiredMessage", "after");
+                            continue;
+                        }
 
-                    bool overwrite = false;
-                    if (repository.ContainsName(dialog.SnippetName, null))
-                    {
-                        Log.Trace("ui.NameConflictMessage", "before");
-                        DialogResult answer = MessageBox.Show(owner,
-                            "Ein Schnellbaustein mit diesem Namen existiert bereits.\n\nJa: überschreiben\nNein: anderen Namen eingeben",
-                            "Namenskonflikt", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
-                        Log.Trace("ui.NameConflictMessage", "after-" + answer);
-                        if (answer == DialogResult.Cancel) return;
-                        if (answer == DialogResult.No) continue;
-                        overwrite = true;
-                    }
+                        bool overwrite = false;
+                        if (repository.ContainsName(dialog.SnippetName, null))
+                        {
+                            Log.Trace("ui.NameConflictMessage", "before");
+                            DialogResult answer = MessageBox.Show(owner,
+                                "Ein Schnellbaustein mit diesem Namen existiert bereits.\n\nJa: überschreiben\nNein: anderen Namen eingeben",
+                                "Namenskonflikt", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
+                            Log.Trace("ui.NameConflictMessage", "after-" + answer);
+                            if (answer == DialogResult.Cancel) return;
+                            if (answer == DialogResult.No) continue;
+                            overwrite = true;
+                        }
 
-                    Log.Trace("repository.save", "before");
-                    repository.Save(dialog.SnippetName, fragment, overwrite);
-                    Log.Trace("repository.save", "after");
-                    InvalidateSnippetMenu();
-                    Log.Trace("command.SaveSelection", "exit-saved");
-                    return;
+                        Stopwatch stopwatch = Stopwatch.StartNew();
+                        Log.Trace("onenote.selection.extract", "before");
+                        XDocument fragment = OneNoteXml.ExtractSelection(selectedPage, oneNote.ReadBinary);
+                        Log.Trace("onenote.selection.extract", "after");
+                        Log.Diagnostic("performance.save.extract",
+                            "elapsedMs=" + stopwatch.ElapsedMilliseconds);
+                        Log.Trace("repository.save", "before");
+                        repository.Save(dialog.SnippetName, fragment, overwrite);
+                        Log.Trace("repository.save", "after");
+                        InvalidateSnippetMenu();
+                        Log.Trace("command.SaveSelection", "exit-saved");
+                        return;
+                    }
                 }
             }
             Log.Trace("command.SaveSelection", "exit-cancelled");
@@ -291,11 +256,6 @@ namespace Schnellbausteine.AddIn
         public string GetSnippetMenuContent(IRibbonControl control)
         {
             Log.Trace("callback.GetSnippetMenuContent", "entry-no-com");
-            if (!expirationPolicy.AllowsFeatures)
-            {
-                menu.Invalidate();
-                return SnippetMenuModel.GetExpiredContent();
-            }
             return menu.RefreshAndGetContent(control == null ? null : control.Id);
         }
 
@@ -310,7 +270,6 @@ namespace Schnellbausteine.AddIn
                     "InsertSnippet",
                     callbackBodyCompleted.Task,
                     "Der Schnellbaustein konnte nicht eingefügt werden.",
-                    true,
                     delegate(IntPtr ownerHandle)
                     {
                         insertSnippetAction(menu.GetSnippet(controlId), ownerHandle);
@@ -325,27 +284,37 @@ namespace Schnellbausteine.AddIn
 
         private void InsertSnippetCore(Snippet snippet, IntPtr fallbackOwnerHandle)
         {
+            Stopwatch stopwatch = Stopwatch.StartNew();
             Log.Trace("command.InsertSnippet", "entry");
-            using (var oneNote = new OneNoteClient())
+            try
             {
-                Log.Trace("onenote.menu-selection.read.piBinaryDataSelection", "before");
-                XDocument anchoredPage = oneNote.ReadCurrentPage();
-                Log.Trace("onenote.menu-selection.read.piBinaryDataSelection", "after");
-                OneNoteSelectionInfo selection = OneNoteXml.AnalyzeSelection(anchoredPage);
-                Log.Diagnostic(
-                    "onenote.menu-selection.after-item-action",
-                    selection.ToDiagnosticString());
-                if (!selection.IsUsable)
+                using (var oneNote = new OneNoteClient())
                 {
-                    Log.Trace("command.InsertSnippet", "abort-selection");
-                    throw new InvalidOperationException(selection.Problem);
-                }
+                    Log.Trace("onenote.menu-selection.read.piBinaryDataSelection", "before");
+                    XDocument anchoredPage = oneNote.ReadCurrentPage();
+                    Log.Trace("onenote.menu-selection.read.piBinaryDataSelection", "after");
+                    OneNoteSelectionInfo selection = OneNoteXml.AnalyzeSelection(anchoredPage);
+                    Log.Diagnostic(
+                        "onenote.menu-selection.after-item-action",
+                        selection.ToDiagnosticString());
+                    if (!selection.IsUsable)
+                    {
+                        Log.Trace("command.InsertSnippet", "abort-selection");
+                        throw new InvalidOperationException(selection.Problem);
+                    }
 
-                InsertSnippetOperation.Execute(
-                    oneNote,
-                    anchoredPage,
-                    snippet,
-                    repository.LoadFragment);
+                    InsertSnippetOperation.Execute(
+                        oneNote,
+                        anchoredPage,
+                        snippet,
+                        repository.LoadFragment);
+                }
+            }
+            finally
+            {
+                Log.Diagnostic(
+                    "performance.insert.total",
+                    "elapsedMs=" + stopwatch.ElapsedMilliseconds);
             }
             Log.Trace("command.InsertSnippet", "exit");
         }
@@ -360,7 +329,6 @@ namespace Schnellbausteine.AddIn
                     "ManageSnippets",
                     callbackBodyCompleted.Task,
                     "Die Schnellbausteine-Verwaltung konnte nicht geöffnet werden.",
-                    true,
                     manageSnippetsAction);
             }
             finally
@@ -370,37 +338,34 @@ namespace Schnellbausteine.AddIn
             }
         }
 
-        public void ShowBetaDownload(IRibbonControl control)
-        {
-            Log.Trace("callback.ShowBetaDownload", "entry");
-            var callbackBodyCompleted = new TaskCompletionSource<object>();
-            try
-            {
-                DispatchUserAction(
-                    "ShowBetaDownload",
-                    callbackBodyCompleted.Task,
-                    "Der Download-Hinweis konnte nicht geöffnet werden.",
-                    false,
-                    delegate(IntPtr ownerHandle)
-                    {
-                        ShowBetaNotice(BetaStatus.Expired, ownerHandle);
-                    });
-            }
-            finally
-            {
-                callbackBodyCompleted.SetResult(null);
-                Log.Trace("callback.ShowBetaDownload", "exit");
-            }
-        }
-
         private void ManageSnippetsCore(IntPtr fallbackOwnerHandle)
         {
             var owner = new WindowHandleOwner(fallbackOwnerHandle);
-            using (var dialog = new ManageDialog(repository, InvalidateSnippetMenu))
+            using (var dialog = new ManageDialog(repository))
             {
                 Log.Trace("ui.ManageDialog", "before");
                 dialog.ShowDialog(owner);
                 Log.Trace("ui.ManageDialog", "after");
+                if (dialog.Changed)
+                {
+                    try
+                    {
+                        InvalidateSnippetMenu();
+                    }
+                    catch (Exception exception)
+                    {
+                        Log.Error(
+                            "Schnellbausteine wurden geändert, aber die Ribbon-Menüs konnten nicht aktualisiert werden.",
+                            exception);
+                        MessageBox.Show(
+                            owner,
+                            "Die Schnellbausteine wurden geändert, aber die Menüs konnten nicht aktualisiert werden.\n\n" +
+                                exception.Message,
+                            "Menüaktualisierung nicht möglich",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
+                    }
+                }
             }
         }
 
@@ -421,7 +386,6 @@ namespace Schnellbausteine.AddIn
             string operation,
             Task callbackBodyCompleted,
             string errorMessage,
-            bool blockWhenExpired,
             Action<IntPtr> action)
         {
             Log.Trace("dispatch." + operation, "entry");
@@ -441,15 +405,7 @@ namespace Schnellbausteine.AddIn
                         Log.Trace("dispatch." + operation, "action.entry");
                         try
                         {
-                            BetaStatus status = expirationPolicy.CurrentStatus;
-                            if (blockWhenExpired && status == BetaStatus.Expired)
-                            {
-                                ShowBetaNotice(status, ownerHandle);
-                            }
-                            else
-                            {
-                                action(ownerHandle);
-                            }
+                            action(ownerHandle);
                         }
                         catch (Exception exception)
                         {
@@ -475,43 +431,6 @@ namespace Schnellbausteine.AddIn
             Log.Trace("dispatch." + operation, "exit");
         }
 
-        private void QueueStartupNotice(Task callbackBodyCompleted)
-        {
-            BetaStatus status = expirationPolicy.CurrentStatus;
-            if (status == BetaStatus.Active) return;
-            if (Interlocked.CompareExchange(ref startupNoticeQueued, 1, 0) != 0) return;
-
-            IntPtr ownerHandle = NativeMethods.GetForegroundWindow();
-            dispatcher.PostAfterCallback(
-                callbackBodyCompleted,
-                delegate
-                {
-                    if (Interlocked.CompareExchange(ref shuttingDown, 0, 0) != 0) return;
-                    BetaStatus currentStatus = expirationPolicy.CurrentStatus;
-                    if (currentStatus != BetaStatus.Active)
-                    {
-                        ShowBetaNotice(currentStatus, ownerHandle);
-                    }
-                },
-                delegate(Exception exception)
-                {
-                    Log.Error("Der Beta-Hinweis konnte nicht geöffnet werden.", exception);
-                });
-        }
-
-        private void ShowBetaNotice(BetaStatus status, IntPtr ownerHandle)
-        {
-            if (Interlocked.CompareExchange(ref noticeActive, 1, 0) != 0) return;
-            try
-            {
-                betaNoticePresenter.Show(status, ownerHandle);
-            }
-            finally
-            {
-                Interlocked.Exchange(ref noticeActive, 0);
-            }
-        }
-
         private static void ShowError(string message, Exception exception, IntPtr ownerHandle)
         {
             Log.Error(message, exception);
@@ -533,7 +452,6 @@ namespace Schnellbausteine.AddIn
         private static readonly XNamespace Ribbon =
             "http://schemas.microsoft.com/office/2009/07/customui";
         private const string EmptyLabel = "Keine Schnellbausteine gespeichert";
-        private const string ExpiredLabel = "Aktuelle Version herunterladen...";
         private const string ManageLabel = "Schnellbausteine verwalten";
         private readonly SnippetRepository repository;
         private readonly object gate = new object();
@@ -598,19 +516,6 @@ namespace Schnellbausteine.AddIn
                 valid = true;
                 return content.ToString(SaveOptions.DisableFormatting);
             }
-        }
-
-        public static string GetExpiredContent()
-        {
-            string generation = Guid.NewGuid().ToString("N");
-            var content = new XElement(
-                Ribbon + "menu",
-                new XElement(
-                    Ribbon + "button",
-                    new XAttribute("id", "sqExpired_" + generation),
-                    new XAttribute("label", ExpiredLabel),
-                    new XAttribute("onAction", "ShowBetaDownload")));
-            return content.ToString(SaveOptions.DisableFormatting);
         }
 
         public Snippet GetSnippet(string controlId)

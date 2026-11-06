@@ -51,13 +51,11 @@ namespace Schnellbausteine.AddIn
     internal sealed class ManageDialog : Form
     {
         private readonly SnippetRepository repository;
-        private readonly Action changed;
         private readonly ListBox list;
 
-        public ManageDialog(SnippetRepository repository, Action changed)
+        public ManageDialog(SnippetRepository repository)
         {
             this.repository = repository;
-            this.changed = changed;
             Text = "Schnellbausteine verwalten";
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(500, 330);
@@ -83,6 +81,8 @@ namespace Schnellbausteine.AddIn
             LoadItems();
         }
 
+        public bool Changed { get; private set; }
+
         private Snippet Selected { get { return list.SelectedItem as Snippet; } }
 
         private void LoadItems()
@@ -93,9 +93,13 @@ namespace Schnellbausteine.AddIn
             list.DataSource = repository.GetAll();
             if (selectedId != null)
             {
-                foreach (object item in list.Items)
+                for (int index = 0; index < list.Items.Count; index++)
                 {
-                    if (((Snippet)item).Id == selectedId) list.SelectedItem = item;
+                    if (((Snippet)list.Items[index]).Id == selectedId)
+                    {
+                        list.SelectedIndex = index;
+                        break;
+                    }
                 }
             }
         }
@@ -119,14 +123,32 @@ namespace Schnellbausteine.AddIn
                     try
                     {
                         repository.Rename(item.Id, dialog.SnippetName);
-                        LoadItems();
-                        changed();
-                        return;
+                        Changed = true;
                     }
                     catch (Exception exception)
                     {
                         MessageBox.Show(this, exception.Message, "Umbenennen nicht möglich", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        continue;
                     }
+
+                    try
+                    {
+                        LoadItems();
+                    }
+                    catch (Exception exception)
+                    {
+                        Log.Error(
+                            "Der Schnellbaustein wurde umbenannt, aber die Liste konnte nicht aktualisiert werden.",
+                            exception);
+                        MessageBox.Show(
+                            this,
+                            "Der Schnellbaustein wurde umbenannt, aber die Liste konnte nicht aktualisiert werden.\n\n" +
+                                exception.Message,
+                            "Aktualisierung nicht möglich",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
+                    }
+                    return;
                 }
             }
         }
@@ -138,8 +160,8 @@ namespace Schnellbausteine.AddIn
             if (MessageBox.Show(this, "Schnellbaustein \"" + item.Name + "\" wirklich löschen?", "Löschen bestätigen",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
             repository.Delete(item.Id);
+            Changed = true;
             LoadItems();
-            changed();
         }
     }
 }

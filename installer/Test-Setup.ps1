@@ -63,10 +63,10 @@ try {
     if ($assemblyInfo.CompanyName -ne "Stefan Malter | Malter365.de") {
         throw "Assembly-Publisher ist inkonsistent: $($assemblyInfo.CompanyName)"
     }
-    if ($assemblyInfo.FileVersion -ne "0.2.0.0") {
+    if ($assemblyInfo.FileVersion -ne "0.2.5.0") {
         throw "Assembly-Dateiversion ist inkonsistent: $($assemblyInfo.FileVersion)"
     }
-    if ($assemblyInfo.ProductVersion -ne "Beta 0.2") {
+    if ($assemblyInfo.ProductVersion -ne "Beta 0.2.5") {
         throw "Assembly-Produktversion ist inkonsistent: $($assemblyInfo.ProductVersion)"
     }
     $oneNotePia = Join-Path $appRoot "$Platform\Microsoft.Office.Interop.OneNote.dll"
@@ -128,7 +128,7 @@ try {
             if ($uninstall.GetValue("DisplayName") -ne "OneNote Schnellbausteine") {
                 throw "ARP-Produktname ist inkonsistent."
             }
-            if ($uninstall.GetValue("DisplayVersion") -ne "Beta 0.2") {
+            if ($uninstall.GetValue("DisplayVersion") -ne "Beta 0.2.5") {
                 throw "ARP-DisplayVersion ist inkonsistent."
             }
             if ($uninstall.GetValue("Publisher") -ne "Stefan Malter | Malter365.de") {

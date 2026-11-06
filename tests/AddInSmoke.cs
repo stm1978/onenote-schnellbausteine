@@ -295,7 +295,7 @@ namespace Schnellbausteine.Tests
                             "SaveSelectionToQuickPartGallery" ||
                         (string)button.Attribute("onAction") != "SaveSelection" ||
                         button.Attribute("getVisible") != null ||
-                        (string)button.Attribute("getEnabled") != "GetFeatureEnabled") ||
+                        button.Attribute("getEnabled") != null) ||
                     (string)saveButtons[0].Attribute("insertBeforeMso") != "Cut" ||
                     (string)insertMenus[0].Attribute("insertBeforeMso") != "Cut" ||
                     (string)contextSeparators[0].Attribute("insertBeforeMso") != "Cut" ||
@@ -371,8 +371,10 @@ namespace Schnellbausteine.Tests
                     hasDynamicCallSites ||
                     referencesDynamicBinder ||
                     type.GetMethod("CanSaveSelection") != null ||
-                    type.GetMethod("ShowBetaDownload") == null ||
-                    type.GetMethod("GetFeatureEnabled") == null ||
+                    type.GetMethod("ShowBetaDownload") != null ||
+                    type.GetMethod("GetFeatureEnabled") != null ||
+                    assembly.GetType("Schnellbausteine.AddIn.ExpirationPolicy") != null ||
+                    assembly.GetType("Schnellbausteine.AddIn.BetaNoticeForm") != null ||
                     selectionMethod == null ||
                     type.GetMethod("SaveSelection") == null ||
                     type.GetMethod("GetSnippetCount") != null ||
@@ -470,7 +472,7 @@ namespace Schnellbausteine.Tests
             {
                 dialog = (Form)Activator.CreateInstance(
                     manageDialogType,
-                    new object[] { repository, new Action(delegate { }) });
+                    new object[] { repository });
                 ListBox list = (ListBox)manageDialogType.GetField(
                     "list",
                     BindingFlags.Instance | BindingFlags.NonPublic).GetValue(dialog);
@@ -521,9 +523,31 @@ namespace Schnellbausteine.Tests
                 loadItems.Invoke(dialog, null);
                 if (list.Items.Count != 0 || list.SelectedItem != null) return false;
 
-                save.Invoke(repository, new object[] { "Gamma", fragment, false });
+                object gamma = save.Invoke(
+                    repository,
+                    new object[] { "Gamma", fragment, false });
+                save.Invoke(repository, new object[] { "Alpha", fragment, false });
+                save.Invoke(repository, new object[] { "Beta", fragment, false });
+                string gammaId = (string)id.GetValue(gamma, null);
                 loadItems.Invoke(dialog, null);
-                return ListText(list) == "Gamma";
+                if (ListText(list) != "Alpha,Beta,Gamma") return false;
+
+                list.SelectedItem = list.Items.Cast<object>().Single(item =>
+                    (string)id.GetValue(item, null) == gammaId);
+                rename.Invoke(repository, new object[] { gammaId, "Zulu" });
+                loadItems.Invoke(dialog, null);
+                if (ListText(list) != "Alpha,Beta,Zulu" ||
+                    list.SelectedItem == null ||
+                    (string)id.GetValue(list.SelectedItem, null) != gammaId)
+                {
+                    return false;
+                }
+
+                rename.Invoke(repository, new object[] { gammaId, "Aardvark" });
+                loadItems.Invoke(dialog, null);
+                return ListText(list) == "Aardvark,Alpha,Beta" &&
+                    list.SelectedItem != null &&
+                    (string)id.GetValue(list.SelectedItem, null) == gammaId;
             }
             finally
             {

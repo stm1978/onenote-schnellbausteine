@@ -1,5 +1,7 @@
 using System;
+using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using System.Xml.Linq;
 using Schnellbausteine.Core;
 
@@ -55,11 +57,26 @@ namespace Schnellbausteine.AddIn
 
         public XDocument ReadCurrentPage()
         {
+            return ReadCurrentPage(true, "insert");
+        }
+
+        public XDocument ReadCurrentPageForCapture()
+        {
+            return ReadCurrentPage(false, "save");
+        }
+
+        private XDocument ReadCurrentPage(bool includeBinaryData, string operation)
+        {
+            Stopwatch stopwatch = Stopwatch.StartNew();
             Log.Trace("onenote.page.read", "entry");
             currentPageId = GetCurrentPageId();
             Log.Trace("onenote.application.GetPageContent", "before");
-            string xml = application.GetPageContent(currentPageId, true, true);
+            string xml = application.GetPageContent(currentPageId, includeBinaryData, true);
             Log.Trace("onenote.application.GetPageContent", "after");
+            Log.Diagnostic(
+                "performance." + operation + ".get-page-content",
+                "elapsedMs=" + stopwatch.ElapsedMilliseconds);
+            stopwatch.Restart();
             XDocument page = XDocument.Parse(xml, LoadOptions.PreserveWhitespace);
             XAttribute lastModified = page.Root == null
                 ? null
@@ -77,6 +94,9 @@ namespace Schnellbausteine.AddIn
             expectedLastModifiedTime = parsedLastModified;
             hasExpectedLastModifiedTime = true;
             Log.Diagnostic("onenote.selection", OneNoteXml.AnalyzeSelection(page).ToDiagnosticString());
+            Log.Diagnostic(
+                "performance." + operation + ".parse-and-analyze",
+                "elapsedMs=" + stopwatch.ElapsedMilliseconds);
             Log.Trace("onenote.page.read", "exit");
             return page;
         }
@@ -99,6 +119,7 @@ namespace Schnellbausteine.AddIn
 
         public void UpdateCurrentPage(XDocument page)
         {
+            ValidateInkFreeUpdate(page);
             Log.Trace("onenote.page.update", "entry");
             if (string.IsNullOrEmpty(currentPageId)) currentPageId = GetCurrentPageId();
             if (!hasExpectedLastModifiedTime)
@@ -107,13 +128,35 @@ namespace Schnellbausteine.AddIn
                     "Die Seite wurde vor dem Aktualisieren nicht mit Änderungszeitpunkt gelesen.");
             }
             OneNoteXml.ValidatePostInsertCaret(page);
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            string xml = page.ToString(SaveOptions.DisableFormatting);
+            Log.Diagnostic(
+                "performance.insert.serialize-page",
+                "elapsedMs=" + stopwatch.ElapsedMilliseconds);
+            stopwatch.Restart();
             Log.Trace("onenote.application.UpdatePageContent", "before");
             application.UpdatePageContent(
-                page.ToString(SaveOptions.DisableFormatting),
+                xml,
                 expectedLastModifiedTime);
             Log.Trace("onenote.application.UpdatePageContent", "after");
+            Log.Diagnostic(
+                "performance.insert.update-page-content",
+                "elapsedMs=" + stopwatch.ElapsedMilliseconds);
             hasExpectedLastModifiedTime = false;
             Log.Trace("onenote.page.update", "exit");
+        }
+
+        internal static void ValidateInkFreeUpdate(XDocument document)
+        {
+            if (document == null) throw new ArgumentNullException("document");
+            // Rewriting exported ink can discard effects on existing originals as well.
+            if (document.Descendants(OneNoteXml.One + "InkDrawing").Any())
+            {
+                throw new InvalidOperationException(
+                    "Einfügen ist für Freihand-Bausteine und in Textcontainern mit Freihandzeichnungen " +
+                    "vorübergehend gesperrt. Der XML-Schreibpfad kann Farbeffekte vorhandener " +
+                    "Originalzeichnungen verlieren. Die Seite wurde nicht aktualisiert.");
+            }
         }
 
         public void UpdateCurrentPageAndActivateWindow(XDocument page)

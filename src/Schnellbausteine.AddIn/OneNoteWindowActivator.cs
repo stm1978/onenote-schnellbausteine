@@ -17,6 +17,7 @@ namespace Schnellbausteine.AddIn
         uint GetCurrentThreadId();
         IntPtr GetFocus();
         IntPtr GetForegroundWindow();
+        IntPtr GetRootWindow(IntPtr windowHandle);
         uint GetWindowThreadProcessId(IntPtr windowHandle, out uint processId);
         bool IsChild(IntPtr parentWindow, IntPtr windowHandle);
         bool IsIconic(IntPtr windowHandle);
@@ -43,6 +44,14 @@ namespace Schnellbausteine.AddIn
 
         public void Activate(IntPtr windowHandle)
         {
+            if (windowHandle == IntPtr.Zero || !native.IsWindow(windowHandle))
+            {
+                Log.Diagnostic("onenote.window.activation", "validTarget=false");
+                return;
+            }
+            // OneNote's COM WindowHandle can identify the workspace child, not its frame.
+            IntPtr requestedWindow = windowHandle;
+            windowHandle = native.GetRootWindow(windowHandle);
             uint currentProcess = native.GetCurrentProcessId();
             uint currentThread = native.GetCurrentThreadId();
             IntPtr foregroundWindow = native.GetForegroundWindow();
@@ -58,6 +67,7 @@ namespace Schnellbausteine.AddIn
                 " foregroundHwnd=" + FormatHandle(foregroundWindow) +
                 " foregroundPid=" + foregroundProcess.ToString(CultureInfo.InvariantCulture) +
                 " foregroundTid=" + foregroundThread.ToString(CultureInfo.InvariantCulture) +
+                " requestedHwnd=" + FormatHandle(requestedWindow) +
                 " targetHwnd=" + FormatHandle(windowHandle) +
                 " targetPid=" + targetProcess.ToString(CultureInfo.InvariantCulture) +
                 " targetTid=" + targetThread.ToString(CultureInfo.InvariantCulture));
@@ -193,6 +203,11 @@ namespace Schnellbausteine.AddIn
             return NativeMethods.GetForegroundWindow();
         }
 
+        public IntPtr GetRootWindow(IntPtr windowHandle)
+        {
+            return NativeMethods.GetAncestor(windowHandle, 2);
+        }
+
         public uint GetWindowThreadProcessId(IntPtr windowHandle, out uint processId)
         {
             return NativeMethods.GetWindowThreadProcessId(windowHandle, out processId);
@@ -247,6 +262,9 @@ namespace Schnellbausteine.AddIn
 
             [DllImport("user32.dll")]
             internal static extern IntPtr GetForegroundWindow();
+
+            [DllImport("user32.dll")]
+            internal static extern IntPtr GetAncestor(IntPtr windowHandle, uint flags);
 
             [DllImport("user32.dll")]
             internal static extern uint GetWindowThreadProcessId(
