@@ -27,9 +27,11 @@ kopierten OneMore-Quellcode.
 > **Beta 0.2.5 vorerst nicht zum Einfügen verwenden.** Ein Tester meldet, dass
 > nach dem Einfügen auch vorhandene Originalzeichnungen ihre Rainbow-Farbe
 > verlieren. Der bisherige XML-Pfad schreibt die gesamte Seite zurück.
-> Der noch unveröffentlichte Stand sperrt deshalb Einfügen auf Seiten mit
-> Freihanddaten sowie das Einfügen von Freihand-Bausteinen vor jeder Änderung.
-> Diese Schutzsperre ist im veröffentlichten Installer nicht enthalten und
+> Der noch unveröffentlichte Stand schreibt nur den eindeutig identifizierten
+> Ziel-Textcontainer und neue Formatdefinitionen zurück. Andere Seitenobjekte
+> werden nicht zurückgesendet. Freihand-Bausteine und Zielcontainer mit
+> Freihanddaten bleiben gesperrt.
+> Diese Änderungen sind im veröffentlichten Installer nicht enthalten und
 > stellt keine Reparatur der Ink-Darstellung dar.
 > Zudem blockiert Microsoft Defender den veröffentlichten Installer als
 > `Program:Win32/Contebrew.A!ml`. Die Erkennung ist nicht geklärt;
@@ -95,6 +97,16 @@ Menüeintrag liest der verzögerte STA-Einfügepfad die Seite einschließlich
 mehrdeutig, bricht das Add-in sichtbar ab, statt an einer geratenen
 Outline-Position einzufügen.
 
+Der unveröffentlichte Einfügepfad arbeitet auf einer Kopie der gelesenen Seite.
+An OneNote werden ausschließlich der vollständige geänderte Ziel-Outline mit
+seiner bestehenden `objectID` und neue `TagDef`-/`QuickStyleDef`-Definitionen
+gesendet. Unveränderte Originalzeichnungen, Bilder, Titel, andere Outlines und
+unbekannte Seitendaten bleiben außerhalb dieses Updates. Änderungen außerhalb
+des Zielcontainers, fehlende oder doppelte Objekt-IDs sowie Änderungen an
+bestehenden Formatdefinitionen führen zum sichtbaren Abbruch. OneNotes
+Änderungszeitpunkt-Prüfung bleibt aktiv. Dieser Pfad ist automatisiert am
+COM-Adapter geprüft, aber noch nicht im realen OneNote validiert.
+
 Menü, Tastatursteuerung, Escape und Click-away werden vollständig von Office
 bereitgestellt; das Add-in öffnet keine eigene Popup-Oberfläche.
 
@@ -148,10 +160,10 @@ diese optionale Angabe bleiben lesbar und verändern die Zielbreite nicht.
 - Tester melden für Beta 0.2.5 weiterhin falsche Anordnung zusammengesetzter
   Zeichnungen und einfarbige Rainbow-Striche. Die XML-Roundtrip-Tests belegen
   keine originalgetreue Darstellung in OneNote; diese Fehler sind noch offen.
-- Als Schutz vor Farbverlust auch an Originalzeichnungen verweigert der
-  unveröffentlichte Add-in-Stand jeden Insert, sobald Zielseite oder Baustein
-  `InkDrawing` enthält, auch bei einem reinen Textbaustein auf einer Ink-Seite.
-  Es erfolgen dann weder XML-Transformation noch OneNote-Update.
+- Als Schutz vor Farbverlust verweigert der unveröffentlichte Add-in-Stand
+  Einfügen, sobald der Ziel-Textcontainer oder Baustein `InkDrawing` enthält.
+  Freihand in anderen Containern oder direkt auf der Seite wird nicht erneut
+  geschrieben und sperrt einen getrennten Textcontainer nicht mehr.
 - Hyperlink-/MathML-Spezialcursor werden absichtlich nur an einer sicheren
   Absatzgrenze behandelt, damit kein Inhalt verloren geht.
 

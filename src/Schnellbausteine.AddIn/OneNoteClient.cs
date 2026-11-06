@@ -153,7 +153,7 @@ namespace Schnellbausteine.AddIn
             if (document.Descendants(OneNoteXml.One + "InkDrawing").Any())
             {
                 throw new InvalidOperationException(
-                    "Einfügen ist für Freihand-Bausteine und auf Seiten mit Freihandzeichnungen " +
+                    "Einfügen ist für Freihand-Bausteine und in Textcontainern mit Freihandzeichnungen " +
                     "vorübergehend gesperrt. Der XML-Schreibpfad kann Farbeffekte vorhandener " +
                     "Originalzeichnungen verlieren. Die Seite wurde nicht aktualisiert.");
             }
