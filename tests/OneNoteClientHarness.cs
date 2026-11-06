@@ -110,6 +110,7 @@ namespace Schnellbausteine.Tests
             public readonly List<string> Calls;
             public IntPtr ForegroundWindow = new IntPtr(200);
             public IntPtr FocusedWindow = new IntPtr(101);
+            public IntPtr RootWindow = new IntPtr(100);
             public bool Iconic;
             public bool SetForegroundResult = true;
             public bool BringToTopResult = true;
@@ -159,6 +160,12 @@ namespace Schnellbausteine.Tests
                 return ForegroundWindow;
             }
 
+            public IntPtr GetRootWindow(IntPtr windowHandle)
+            {
+                Calls.Add("root:" + windowHandle.ToInt64());
+                return RootWindow;
+            }
+
             public uint GetWindowThreadProcessId(
                 IntPtr windowHandle,
                 out uint processId)
@@ -194,7 +201,7 @@ namespace Schnellbausteine.Tests
             public bool IsWindow(IntPtr windowHandle)
             {
                 Calls.Add("window:" + windowHandle.ToInt64());
-                return windowHandle == new IntPtr(100);
+                return windowHandle == new IntPtr(100) || windowHandle == new IntPtr(101);
             }
 
             public bool SetForegroundWindow(IntPtr windowHandle)
@@ -228,6 +235,10 @@ namespace Schnellbausteine.Tests
                 MenuInvalidationRejectsStaleIdsAndReloadsCrud();
                 TargetAlreadyForegroundAcceptsSetForegroundFalse();
                 CurrentForegroundAndTargetThreadsAreAttached();
+                WorkspaceChildActivatesTheRootFrame();
+                MissingRootNeverActivatesAWindow();
+                InvalidRootNeverActivatesAWindow();
+                InvalidWorkspaceNeverResolvesOrActivatesAWindow();
                 AttachedThreadsAreDetachedInFinally();
                 MinimizedTargetIsRestoredBeforeActivation();
                 RejectedActivationDoesNotFailInsert();
@@ -246,7 +257,7 @@ namespace Schnellbausteine.Tests
                 FailedScopedUpdateLeavesSourceUnchanged();
                 ExpirationSurfaceIsRemoved();
                 FeatureActionsRemainAvailableWithoutClock();
-                Console.WriteLine("27/27 OneNote-Client-Harness-Tests erfolgreich.");
+                Console.WriteLine("31/31 OneNote-Client-Harness-Tests erfolgreich.");
                 return 0;
             }
             catch (Exception exception)
@@ -501,6 +512,54 @@ namespace Schnellbausteine.Tests
                 "set:100",
                 "attach:10:30:False",
                 "attach:10:20:False");
+        }
+
+        private static void WorkspaceChildActivatesTheRootFrame()
+        {
+            var calls = new List<string>();
+            var native = new FakeWindowNative(calls);
+
+            new OneNoteWindowActivator(native).Activate(new IntPtr(101));
+
+            Ordered(calls, "root:101", "set:100", "bring:100", "child:100:101");
+            Equal(false, calls.Contains("set:101"));
+            Equal(false, calls.Contains("bring:101"));
+        }
+
+        private static void MissingRootNeverActivatesAWindow()
+        {
+            var calls = new List<string>();
+            var native = new FakeWindowNative(calls) { RootWindow = IntPtr.Zero };
+
+            new OneNoteWindowActivator(native).Activate(new IntPtr(101));
+
+            Contains(calls, "root:101");
+            Equal(false, calls.Any(call => call.StartsWith("set:", StringComparison.Ordinal)));
+            Equal(false, calls.Any(call => call.StartsWith("attach:", StringComparison.Ordinal)));
+        }
+
+        private static void InvalidRootNeverActivatesAWindow()
+        {
+            var calls = new List<string>();
+            var native = new FakeWindowNative(calls) { RootWindow = new IntPtr(999) };
+
+            new OneNoteWindowActivator(native).Activate(new IntPtr(101));
+
+            Contains(calls, "root:101");
+            Equal(false, calls.Any(call => call.StartsWith("set:", StringComparison.Ordinal)));
+            Equal(false, calls.Any(call => call.StartsWith("attach:", StringComparison.Ordinal)));
+        }
+
+        private static void InvalidWorkspaceNeverResolvesOrActivatesAWindow()
+        {
+            foreach (IntPtr handle in new[] { IntPtr.Zero, new IntPtr(999) })
+            {
+                var calls = new List<string>();
+                new OneNoteWindowActivator(new FakeWindowNative(calls)).Activate(handle);
+                Equal(false, calls.Any(call => call.StartsWith("root:", StringComparison.Ordinal)));
+                Equal(false, calls.Any(call => call.StartsWith("set:", StringComparison.Ordinal)));
+                Equal(false, calls.Any(call => call.StartsWith("attach:", StringComparison.Ordinal)));
+            }
         }
 
         private static void MinimizedTargetIsRestoredBeforeActivation()
