@@ -1,5 +1,11 @@
 # OneNote Schnellbausteine – Beta 0.2.5
 
+## Unveröffentlicht
+
+- Der Speicherpfad liest vor dem Namensdialog nur die Seitenstruktur mit Auswahlmarkierungen (`piSelection`). Erst nach Bestätigung des Namens werden Binärdaten der ausgewählten Bilder und vollständigen Ink-Objekte geladen; ein Abbruch lädt keine Binärdaten. Die Seiten-/Auswahlaufnahme wird nach dem Dialog nicht wiederholt.
+- Ink-Binärdatenreferenzen über `objectID` werden vor dem Entfernen seitenbezogener IDs aufgelöst. Regressionstests prüfen die Beschränkung auf ausgewählte Objekte.
+- Die reale Dialogwartezeit wurde noch nicht in OneNote gemessen. Die Tester melden weiterhin falsche Anordnung zusammengesetzter Zeichnungen und einfarbige Rainbow-Striche; diese Fehler sind nicht als behoben anzusehen.
+
 ## v0.2.5-beta.1
 
 - Ermöglicht das getrennte Speichern ausgewählter Zeichnungen und Texte, auch wenn sie in derselben OneNote-OE-Struktur liegen.

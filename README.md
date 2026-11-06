@@ -56,6 +56,12 @@ Lokale Schnellbausteine werden durch Upgrade oder Deinstallation nicht gelöscht
 
 ## Bedienung
 
+Im noch unveröffentlichten Speicherpfad wird vor dem Namensdialog nur die
+Seitenstruktur einschließlich Auswahlmarkierungen (`piSelection`) aufgenommen.
+Erst nach Bestätigung des Namens lädt das Add-in die Binärdaten der ausgewählten
+Bilder und vollständigen Freihandobjekte nach. Abbrechen lädt keine Binärdaten.
+Die Auswahl wird nach dem Dialog nicht erneut gelesen.
+
 1. Inhalt auf einer OneNote-Seite markieren.
 2. Im Kontextmenü von Text, Outline-Handle, Tabelle oder Freihandauswahl
    **Als Schnellbaustein speichern...** wählen und einen eindeutigen Namen
@@ -126,8 +132,11 @@ diese optionale Angabe bleiben lesbar und verändern die Zielbreite nicht.
   sicher abgelehnt.
 - Eine Lasso-Auswahl wird nicht offline auf einzelne Striche zugeschnitten.
   Gespeichert wird ausschließlich ein vollständiger `InkDrawing`-Blob, den
-  OneNote selbst in `piBinaryDataSelection` als eigenständige Binärdaten
+  OneNote selbst als eigenständige Binärdaten
   liefert. Fehlen diese Daten, bricht der Speichervorgang sichtbar ab.
+- Tester melden für Beta 0.2.5 weiterhin falsche Anordnung zusammengesetzter
+  Zeichnungen und einfarbige Rainbow-Striche. Die XML-Roundtrip-Tests belegen
+  keine originalgetreue Darstellung in OneNote; diese Fehler sind noch offen.
 - Hyperlink-/MathML-Spezialcursor werden absichtlich nur an einer sicheren
   Absatzgrenze behandelt, damit kein Inhalt verloren geht.
 

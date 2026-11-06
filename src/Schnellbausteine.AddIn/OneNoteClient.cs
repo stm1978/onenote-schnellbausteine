@@ -56,14 +56,24 @@ namespace Schnellbausteine.AddIn
 
         public XDocument ReadCurrentPage()
         {
+            return ReadCurrentPage(true, "insert");
+        }
+
+        public XDocument ReadCurrentPageForCapture()
+        {
+            return ReadCurrentPage(false, "save");
+        }
+
+        private XDocument ReadCurrentPage(bool includeBinaryData, string operation)
+        {
             Stopwatch stopwatch = Stopwatch.StartNew();
             Log.Trace("onenote.page.read", "entry");
             currentPageId = GetCurrentPageId();
             Log.Trace("onenote.application.GetPageContent", "before");
-            string xml = application.GetPageContent(currentPageId, true, true);
+            string xml = application.GetPageContent(currentPageId, includeBinaryData, true);
             Log.Trace("onenote.application.GetPageContent", "after");
             Log.Diagnostic(
-                "performance.insert.get-page-content",
+                "performance." + operation + ".get-page-content",
                 "elapsedMs=" + stopwatch.ElapsedMilliseconds);
             stopwatch.Restart();
             XDocument page = XDocument.Parse(xml, LoadOptions.PreserveWhitespace);
@@ -84,7 +94,7 @@ namespace Schnellbausteine.AddIn
             hasExpectedLastModifiedTime = true;
             Log.Diagnostic("onenote.selection", OneNoteXml.AnalyzeSelection(page).ToDiagnosticString());
             Log.Diagnostic(
-                "performance.insert.parse-and-analyze",
+                "performance." + operation + ".parse-and-analyze",
                 "elapsedMs=" + stopwatch.ElapsedMilliseconds);
             Log.Trace("onenote.page.read", "exit");
             return page;

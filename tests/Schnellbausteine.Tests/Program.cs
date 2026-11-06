@@ -28,6 +28,7 @@ namespace Schnellbausteine.Tests
             InvalidTableSelectionsAreRejected,
             InlineInkDataIsCapturedLosslessly,
             InkCallbackIsMaterializedAndMetadataRemoved,
+            SelectionOnlyCaptureLoadsOnlySelectedBinaryObjects,
             InkPayloadAndRelativePositionsRoundTrip,
             PartiallyPositionedInkGroupIsRejected,
             RelativeInkRequiresTargetPosition,
@@ -413,6 +414,40 @@ namespace Schnellbausteine.Tests
             Equal("0", (string)ink.Element(OneNoteXml.One + "Position").Attribute("y"));
             Equal("0", (string)ink.Element(OneNoteXml.One + "Position").Attribute("z"));
             Assert(!ink.Attributes("lastModifiedTime").Any(), "lastModifiedTime wurde persistiert.");
+        }
+
+        private static void SelectionOnlyCaptureLoadsOnlySelectedBinaryObjects()
+        {
+            XDocument page = Page(
+                "<one:Outline><one:OEChildren><one:OE>" +
+                "<one:Image selected=\"all\" callbackID=\"selected-image\"/>" +
+                "<one:Image callbackID=\"unselected-image\"/>" +
+                "</one:OE></one:OEChildren></one:Outline>" +
+                "<one:InkDrawing selected=\"all\" objectID=\"selected-ink\">" +
+                "<one:Position x=\"20\" y=\"30\"/><one:Size width=\"40\" height=\"50\"/>" +
+                "</one:InkDrawing>" +
+                "<one:InkDrawing objectID=\"unselected-ink\"/>");
+            string original = page.ToString();
+            var calls = new List<string>();
+            XDocument fragment = OneNoteXml.ExtractSelection(page, reference =>
+            {
+                calls.Add(reference);
+                if (reference == "selected-image") return "AQID";
+                if (reference == "selected-ink") return "BAUG";
+                throw new InvalidOperationException("Unselected binary object was requested.");
+            });
+            Equal("selected-image,selected-ink", string.Join(",", calls));
+            Equal("AQID", fragment.Descendants(OneNoteXml.One + "Image")
+                .Single().Element(OneNoteXml.One + "Data").Value);
+            Equal("BAUG", fragment.Descendants(OneNoteXml.One + "InkDrawing")
+                .Single().Element(OneNoteXml.One + "Data").Value);
+            Assert(!fragment.Descendants().Attributes("objectID").Any(),
+                "Seitenbezogene Objekt-IDs wurden persistiert.");
+            Assert(!fragment.Descendants().Attributes("callbackID").Any(),
+                "Seitenbezogene Callback-IDs wurden persistiert.");
+            Equal(original, page.ToString());
+            Throws<InvalidOperationException>(() =>
+                OneNoteXml.ExtractSelection(page, reference => string.Empty));
         }
 
         private static void InkPayloadAndRelativePositionsRoundTrip()

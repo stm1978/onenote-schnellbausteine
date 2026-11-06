@@ -195,54 +195,59 @@ namespace Schnellbausteine.AddIn
         private void SaveSelectionCore(IntPtr fallbackOwnerHandle)
         {
             Log.Trace("command.SaveSelection", "entry");
-            XDocument fragment;
-            IntPtr ownerHandle;
             using (var oneNote = new OneNoteClient())
             {
-                Log.Trace("onenote.selection.extract", "before");
-                fragment = OneNoteXml.ExtractSelection(oneNote.ReadCurrentPage(), oneNote.ReadBinary);
-                Log.Trace("onenote.selection.extract", "after");
-                ownerHandle = oneNote.CurrentWindowHandle;
-            }
-
-            var owner = new WindowHandleOwner(
-                ownerHandle == IntPtr.Zero ? fallbackOwnerHandle : ownerHandle);
-            using (var dialog = new NameDialog("Als Schnellbaustein speichern", string.Empty))
-            {
-                while (true)
+                XDocument selectedPage = oneNote.ReadCurrentPageForCapture();
+                if (!OneNoteXml.HasSelection(selectedPage))
                 {
-                    Log.Trace("ui.NameDialog", "before");
-                    DialogResult dialogResult = dialog.ShowDialog(owner);
-                    Log.Trace("ui.NameDialog", "after-" + dialogResult);
-                    if (dialogResult != DialogResult.OK) break;
-                    if (dialog.SnippetName.Length == 0)
+                    throw new InvalidOperationException("OneNote meldet keine markierte Auswahl.");
+                }
+                IntPtr ownerHandle = oneNote.CurrentWindowHandle;
+                var owner = new WindowHandleOwner(
+                    ownerHandle == IntPtr.Zero ? fallbackOwnerHandle : ownerHandle);
+                using (var dialog = new NameDialog("Als Schnellbaustein speichern", string.Empty))
+                {
+                    while (true)
                     {
-                        Log.Trace("ui.NameRequiredMessage", "before");
-                        MessageBox.Show(owner, "Bitte einen Namen eingeben.", "Name erforderlich",
-                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        Log.Trace("ui.NameRequiredMessage", "after");
-                        continue;
-                    }
+                        Log.Trace("ui.NameDialog", "before");
+                        DialogResult dialogResult = dialog.ShowDialog(owner);
+                        Log.Trace("ui.NameDialog", "after-" + dialogResult);
+                        if (dialogResult != DialogResult.OK) break;
+                        if (dialog.SnippetName.Length == 0)
+                        {
+                            Log.Trace("ui.NameRequiredMessage", "before");
+                            MessageBox.Show(owner, "Bitte einen Namen eingeben.", "Name erforderlich",
+                                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            Log.Trace("ui.NameRequiredMessage", "after");
+                            continue;
+                        }
 
-                    bool overwrite = false;
-                    if (repository.ContainsName(dialog.SnippetName, null))
-                    {
-                        Log.Trace("ui.NameConflictMessage", "before");
-                        DialogResult answer = MessageBox.Show(owner,
-                            "Ein Schnellbaustein mit diesem Namen existiert bereits.\n\nJa: überschreiben\nNein: anderen Namen eingeben",
-                            "Namenskonflikt", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
-                        Log.Trace("ui.NameConflictMessage", "after-" + answer);
-                        if (answer == DialogResult.Cancel) return;
-                        if (answer == DialogResult.No) continue;
-                        overwrite = true;
-                    }
+                        bool overwrite = false;
+                        if (repository.ContainsName(dialog.SnippetName, null))
+                        {
+                            Log.Trace("ui.NameConflictMessage", "before");
+                            DialogResult answer = MessageBox.Show(owner,
+                                "Ein Schnellbaustein mit diesem Namen existiert bereits.\n\nJa: überschreiben\nNein: anderen Namen eingeben",
+                                "Namenskonflikt", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
+                            Log.Trace("ui.NameConflictMessage", "after-" + answer);
+                            if (answer == DialogResult.Cancel) return;
+                            if (answer == DialogResult.No) continue;
+                            overwrite = true;
+                        }
 
-                    Log.Trace("repository.save", "before");
-                    repository.Save(dialog.SnippetName, fragment, overwrite);
-                    Log.Trace("repository.save", "after");
-                    InvalidateSnippetMenu();
-                    Log.Trace("command.SaveSelection", "exit-saved");
-                    return;
+                        Stopwatch stopwatch = Stopwatch.StartNew();
+                        Log.Trace("onenote.selection.extract", "before");
+                        XDocument fragment = OneNoteXml.ExtractSelection(selectedPage, oneNote.ReadBinary);
+                        Log.Trace("onenote.selection.extract", "after");
+                        Log.Diagnostic("performance.save.extract",
+                            "elapsedMs=" + stopwatch.ElapsedMilliseconds);
+                        Log.Trace("repository.save", "before");
+                        repository.Save(dialog.SnippetName, fragment, overwrite);
+                        Log.Trace("repository.save", "after");
+                        InvalidateSnippetMenu();
+                        Log.Trace("command.SaveSelection", "exit-saved");
+                        return;
+                    }
                 }
             }
             Log.Trace("command.SaveSelection", "exit-cancelled");

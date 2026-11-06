@@ -115,8 +115,8 @@ namespace Schnellbausteine.Core
                 {
                     PruneUnselectedContent(clone, false);
                 }
-                RemoveTransientAttributes(clone);
                 ResolveBinaryData(clone, binaryResolver);
+                RemoveTransientAttributes(clone);
                 content.Add(clone);
             }
 
@@ -1654,10 +1654,14 @@ namespace Schnellbausteine.Core
             if (dataElement != null) dataElement.Remove();
 
             string callback = (string)element.Attribute("callbackID");
+            if (string.IsNullOrWhiteSpace(callback) && element.Name == One + "InkDrawing")
+            {
+                callback = (string)element.Attribute("objectID");
+            }
             if (string.IsNullOrWhiteSpace(callback))
             {
                 throw new InvalidOperationException(
-                    description + " enthält weder eigenständige Data noch callbackID.");
+                    description + " enthält weder eigenständige Data noch eine Binärdatenreferenz.");
             }
             if (binaryResolver == null)
             {
@@ -1671,7 +1675,8 @@ namespace Schnellbausteine.Core
                     "OneNote lieferte keine Binärdaten für " + description + " " + callback + ".");
             }
             element.Add(new XElement(One + "Data", data));
-            element.Attribute("callbackID").Remove();
+            XAttribute callbackAttribute = element.Attribute("callbackID");
+            if (callbackAttribute != null) callbackAttribute.Remove();
         }
 
         private static void PruneUnselectedContent(XElement element, bool selectedAncestor)

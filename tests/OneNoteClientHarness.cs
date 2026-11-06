@@ -33,6 +33,7 @@ namespace Schnellbausteine.Tests
             public readonly List<string> Calls;
             public Exception UpdateException;
             public string BinaryData;
+            public string PageXml;
 
             public FakeApplication(List<string> calls)
             {
@@ -41,6 +42,11 @@ namespace Schnellbausteine.Tests
 
             public OneNoteWindowInfo GetCurrentWindow()
             {
+                if (PageXml != null)
+                {
+                    Calls.Add("window");
+                    return new OneNoteWindowInfo { PageId = "capture-page", WindowHandle = new IntPtr(123) };
+                }
                 throw new NotSupportedException();
             }
 
@@ -51,6 +57,7 @@ namespace Schnellbausteine.Tests
             {
                 Calls.Add(
                     "read:" + pageId + ":" + includeBinaryData + ":" + includeSelection);
+                if (PageXml != null) return PageXml;
                 throw new InvalidOperationException(
                     "Nach dem Update darf die Seite nicht erneut gelesen werden.");
             }
@@ -223,9 +230,11 @@ namespace Schnellbausteine.Tests
                 MinimizedTargetIsRestoredBeforeActivation();
                 RejectedActivationDoesNotFailInsert();
                 BinaryCallbacksUseCapturedPageOnClientThread();
+                CaptureReadDefersBinaryAndPreservesSelectedPage();
+                InsertReadStillIncludesPageBinaryData();
                 ExpirationSurfaceIsRemoved();
                 FeatureActionsRemainAvailableWithoutClock();
-                Console.WriteLine("15/15 OneNote-Client-Harness-Tests erfolgreich.");
+                Console.WriteLine("17/17 OneNote-Client-Harness-Tests erfolgreich.");
                 return 0;
             }
             catch (Exception exception)
@@ -533,6 +542,44 @@ namespace Schnellbausteine.Tests
                 Equal("opaque-data", client.ReadBinary("ink-callback"));
             }
             Equal("binary:page-id:ink-callback", string.Join(",", calls));
+        }
+
+        private static void CaptureReadDefersBinaryAndPreservesSelectedPage()
+        {
+            var calls = new List<string>();
+            var application = new FakeApplication(calls)
+            {
+                PageXml = "<one:Page xmlns:one=\"" + OneNoteXml.One +
+                    "\" lastModifiedTime=\"2026-11-06T10:00:00Z\">" +
+                    "<one:InkDrawing selected=\"all\" objectID=\"ink-object\"/>" +
+                    "<one:InkDrawing objectID=\"unselected-ink\"/>" +
+                    "</one:Page>",
+                BinaryData = "AQID"
+            };
+            using (var client = new OneNoteClient(application, new FakeWindowActivator(calls)))
+            {
+                XDocument capturedPage = client.ReadCurrentPageForCapture();
+                Equal("window,read:capture-page:False:True", string.Join(",", calls));
+                // Changing focus while naming must not trigger another page/selection read.
+                application.PageXml = Page().ToString();
+                XDocument fragment = OneNoteXml.ExtractSelection(capturedPage, client.ReadBinary);
+                Equal("AQID", fragment.Descendants(OneNoteXml.One + "Data").Single().Value);
+            }
+            Equal("window,read:capture-page:False:True,binary:capture-page:ink-object",
+                string.Join(",", calls));
+        }
+
+        private static void InsertReadStillIncludesPageBinaryData()
+        {
+            var calls = new List<string>();
+            XDocument page = Page();
+            page.Root.SetAttributeValue("lastModifiedTime", "2026-11-06T10:00:00Z");
+            var application = new FakeApplication(calls) { PageXml = page.ToString() };
+            using (var client = new OneNoteClient(application, new FakeWindowActivator(calls)))
+            {
+                client.ReadCurrentPage();
+            }
+            Equal("window,read:capture-page:True:True", string.Join(",", calls));
         }
 
         private static void ExpirationSurfaceIsRemoved()
