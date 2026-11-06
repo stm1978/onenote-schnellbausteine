@@ -1,8 +1,9 @@
-# OneNote Schnellbausteine – Beta 0.2
+# OneNote Schnellbausteine – Beta 0.2.2
 
-## v0.2.0-beta.3
+## v0.2.2-beta.1
 
-- Die Beta kann bis einschließlich 31. Dezember 2026 vollständig verwendet werden.
-- Ab 1. Dezember 2026 informiert ein Hinweis bei jedem Add-in-Start über das Ablaufdatum und verweist auf [malter365.de](https://www.malter365.de/).
-- Ab 1. Januar 2027 sind die Add-in-Funktionen gesperrt; das Menü bietet ausschließlich den Download-Hinweis an.
-- Lokale Schnellbausteine bleiben bei Ablauf, Upgrade und Deinstallation unverändert erhalten.
+- Trennt das Speichern einer Umbenennung von späteren Listen-/Ribbon-Refreshes, damit nachgelagerte Fehler nicht mehr als fehlgeschlagene Umbenennung gemeldet werden; mehrere aufeinanderfolgende Renames sind abgesichert.
+- Ink-Positionen werden beim Speichern als relative Abstände der gemeinsamen Auswahl bewahrt und beim Einfügen gemeinsam am Ziel-Outline verankert.
+- Ink-Binärdaten sowie vorhandene Darstellungsattribute und -elemente werden beim XML-Roundtrip erhalten.
+- Entfernt Ablaufdatum, Warnhinweise, Download-Dialog und zeitgesteuerte Funktionssperren.
+- Automatisierte XML-Tests decken Ink-Binärpayloads, Rendering-XML und relative Ink-Positionen ab. Die reale Regenbogenstift-Darstellung und Positionierung müssen noch manuell in OneNote geprüft werden.

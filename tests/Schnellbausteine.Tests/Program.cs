@@ -15,6 +15,7 @@ namespace Schnellbausteine.Tests
         private static readonly List<Action> Tests = new List<Action>
         {
             RepositoryCrudAndSorting,
+            RepeatedRenameSurvivesRepositoryReloads,
             RepositoryRejectsConflicts,
             AtomicFileReplacesContent,
             SelectionExtractsRichContentAndDependencies,
@@ -27,6 +28,9 @@ namespace Schnellbausteine.Tests
             InvalidTableSelectionsAreRejected,
             InlineInkDataIsCapturedLosslessly,
             InkCallbackIsMaterializedAndMetadataRemoved,
+            InkPayloadAndRelativePositionsRoundTrip,
+            PartiallyPositionedInkGroupIsRejected,
+            RelativeInkRequiresTargetPosition,
             InvalidInkBinaryDataIsRejected,
             TopLevelInkRoundTripsAtCellAnchor,
             MixedInkAndTextPreserveOrderAndRoundTrip,
@@ -128,6 +132,29 @@ namespace Schnellbausteine.Tests
                     repository.Save(" name ", Fragment("<one:OE><one:T><![CDATA[B]]></one:T></one:OE>"), false));
                 repository.Save("NAME", Fragment("<one:OE><one:T><![CDATA[B]]></one:T></one:OE>"), true);
                 Equal("B", repository.LoadFragment(repository.GetAll().Single().Id).Descendants(OneNoteXml.One + "T").Single().Value);
+            });
+        }
+
+        private static void RepeatedRenameSurvivesRepositoryReloads()
+        {
+            WithTemporaryDirectory(path =>
+            {
+                var repository = new SnippetRepository(path);
+                Snippet saved = repository.Save(
+                    "Start",
+                    Fragment("<one:OE><one:T><![CDATA[bleibt erhalten]]></one:T></one:OE>"),
+                    false);
+
+                foreach (string name in new[] { "Erster Name", "Zweiter Name", "Dritter Name" })
+                {
+                    repository.Rename(saved.Id, name);
+                    SnippetRepository reloaded = new SnippetRepository(path);
+                    Snippet current = reloaded.GetAll().Single();
+                    Equal(saved.Id, current.Id);
+                    Equal(name, current.Name);
+                    Equal("bleibt erhalten",
+                        reloaded.LoadFragment(saved.Id).Descendants(OneNoteXml.One + "T").Single().Value);
+                }
             });
         }
 
@@ -379,8 +406,89 @@ namespace Schnellbausteine.Tests
             Equal("opaque-base64", ink.Element(OneNoteXml.One + "Data").Value);
             Assert(ink.Attribute("callbackID") == null, "callbackID wurde persistiert.");
             Assert(ink.Element(OneNoteXml.One + "File") == null, "Externer Ink-Dateipfad wurde persistiert.");
-            Assert(ink.Element(OneNoteXml.One + "Position") == null, "Seitenposition wurde persistiert.");
+            Equal("0", (string)ink.Element(OneNoteXml.One + "Position").Attribute("x"));
+            Equal("0", (string)ink.Element(OneNoteXml.One + "Position").Attribute("y"));
+            Equal("0", (string)ink.Element(OneNoteXml.One + "Position").Attribute("z"));
             Assert(!ink.Attributes("lastModifiedTime").Any(), "lastModifiedTime wurde persistiert.");
+        }
+
+        private static void InkPayloadAndRelativePositionsRoundTrip()
+        {
+            XDocument source = Page(
+                "<one:InkDrawing selected=\"all\" inkOrigin=\"13,17\">" +
+                "<one:Position x=\"120\" y=\"260\" z=\"4\"/>" +
+                "<one:Size width=\"90\" height=\"50\"/>" +
+                "<one:ShapeInfo type=\"0\"/>" +
+                "<one:Data>AQIDBAUG</one:Data>" +
+                "</one:InkDrawing>" +
+                "<one:InkDrawing selected=\"all\" inkOrigin=\"29,31\">" +
+                "<one:Position x=\"155\" y=\"310\" z=\"5\"/>" +
+                "<one:Size width=\"45\" height=\"25\"/>" +
+                "<one:ShapeInfo type=\"1\"/>" +
+                "<one:Data>BwgJCgsM</one:Data>" +
+                "</one:InkDrawing>");
+
+            XDocument snippet = OneNoteXml.ExtractSelection(source, null);
+            XElement[] savedInk = snippet.Descendants(OneNoteXml.One + "InkDrawing").ToArray();
+            Equal("0,0|35,50", string.Join("|", savedInk.Select(ink =>
+                (string)ink.Element(OneNoteXml.One + "Position").Attribute("x") + "," +
+                (string)ink.Element(OneNoteXml.One + "Position").Attribute("y"))));
+            Equal("13,17|29,31", string.Join("|",
+                savedInk.Select(ink => (string)ink.Attribute("inkOrigin"))));
+            Equal("AQIDBAUG,BwgJCgsM", string.Join(",",
+                savedInk.Select(ink => ink.Element(OneNoteXml.One + "Data").Value)));
+            Equal("0,1", string.Join(",",
+                savedInk.Select(ink => (string)ink.Element(OneNoteXml.One + "ShapeInfo").Attribute("type"))));
+            Assert(snippet.Root.Element(OneNoteXml.Snippet + "Geometry")
+                .Attribute("inkPositions") != null, "Relativer Ink-Anker fehlt.");
+
+            XDocument target = Page(
+                "<one:Outline><one:Position x=\"500\" y=\"700\" z=\"0\"/>" +
+                "<one:Size width=\"300\" height=\"100\"/><one:OEChildren><one:OE>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+            OneNoteXml.InsertAtSelection(target, snippet);
+
+            XElement[] insertedInk = target.Descendants(OneNoteXml.One + "InkDrawing").ToArray();
+            Equal("500,700|535,750", string.Join("|", insertedInk.Select(ink =>
+                (string)ink.Element(OneNoteXml.One + "Position").Attribute("x") + "," +
+                (string)ink.Element(OneNoteXml.One + "Position").Attribute("y"))));
+            Equal("0,1", string.Join(",",
+                insertedInk.Select(ink => (string)ink.Element(OneNoteXml.One + "Position").Attribute("z"))));
+            Equal("13,17|29,31", string.Join("|",
+                insertedInk.Select(ink => (string)ink.Attribute("inkOrigin"))));
+            Equal("AQIDBAUG,BwgJCgsM", string.Join(",",
+                insertedInk.Select(ink => ink.Element(OneNoteXml.One + "Data").Value)));
+            Equal("0,1", string.Join(",",
+                insertedInk.Select(ink => (string)ink.Element(OneNoteXml.One + "ShapeInfo").Attribute("type"))));
+            AssertSinglePostInsertCaret(target);
+        }
+
+        private static void PartiallyPositionedInkGroupIsRejected()
+        {
+            XDocument source = Page(
+                "<one:InkDrawing selected=\"all\"><one:Data>AQID</one:Data></one:InkDrawing>" +
+                "<one:InkDrawing selected=\"all\"><one:Position x=\"10\" y=\"20\"/>" +
+                "<one:Data>BAUG</one:Data></one:InkDrawing>");
+            Throws<InvalidOperationException>(() => OneNoteXml.ExtractSelection(source, null));
+        }
+
+        private static void RelativeInkRequiresTargetPosition()
+        {
+            XDocument snippet = OneNoteXml.ExtractSelection(
+                Page(
+                    "<one:InkDrawing selected=\"all\"><one:Position x=\"10\" y=\"20\"/>" +
+                    "<one:Data>AQID</one:Data></one:InkDrawing>"),
+                null);
+            XDocument target = Page(
+                "<one:Outline><one:OEChildren><one:OE>" +
+                "<one:T selected=\"all\"><![CDATA[]]></one:T>" +
+                "</one:OE></one:OEChildren></one:Outline>");
+            XDocument before = new XDocument(target);
+
+            Throws<InvalidOperationException>(() => OneNoteXml.InsertAtSelection(target, snippet));
+
+            XmlEqual(before, target);
         }
 
         private static void InvalidInkBinaryDataIsRejected()

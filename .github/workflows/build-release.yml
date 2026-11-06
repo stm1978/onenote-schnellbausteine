@@ -91,7 +91,7 @@ jobs:
           $version = if ("${{ github.ref_type }}" -eq "tag") {
             "${{ github.ref_name }}".TrimStart("v")
           } else {
-            "0.2.0-ci.${{ github.run_number }}"
+            "0.2.2-ci.${{ github.run_number }}"
           }
           "value=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
@@ -101,17 +101,17 @@ jobs:
 
       - name: Test x86 Setup lifecycle
         shell: powershell
-        run: .\installer\Test-Setup.ps1 -SetupPath "artifacts\setup\OneNote-Schnellbausteine-Setup-Beta-0.2.exe" -Platform x86 -SkipHostActivation
+        run: .\installer\Test-Setup.ps1 -SetupPath "artifacts\setup\OneNote-Schnellbausteine-Setup-Beta-0.2.2.exe" -Platform x86 -SkipHostActivation
 
       - name: Test x64 Setup lifecycle
         shell: powershell
-        run: .\installer\Test-Setup.ps1 -SetupPath "artifacts\setup\OneNote-Schnellbausteine-Setup-Beta-0.2.exe" -Platform x64 -SkipHostActivation
+        run: .\installer\Test-Setup.ps1 -SetupPath "artifacts\setup\OneNote-Schnellbausteine-Setup-Beta-0.2.2.exe" -Platform x64 -SkipHostActivation
 
       - name: Upload Setup artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OneNote-Schnellbausteine-Beta-0.2
-          path: artifacts/setup/OneNote-Schnellbausteine-Setup-Beta-0.2.exe
+          name: OneNote-Schnellbausteine-Beta-0.2.2
+          path: artifacts/setup/OneNote-Schnellbausteine-Setup-Beta-0.2.2.exe
           if-no-files-found: error
 
       - name: Create or update GitHub Release
@@ -120,13 +120,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $asset = "artifacts\setup\OneNote-Schnellbausteine-Setup-Beta-0.2.exe"
+          $asset = "artifacts\setup\OneNote-Schnellbausteine-Setup-Beta-0.2.2.exe"
           $release = gh release list --limit 100 --json tagName | ConvertFrom-Json |
             Where-Object tagName -eq "${{ github.ref_name }}"
           if ($release) {
             gh release upload "${{ github.ref_name }}" $asset --clobber
           } else {
-            $releaseTitle = "OneNote Schnellbausteine $([char]0x2013) Beta 0.2"
+            $releaseTitle = "OneNote Schnellbausteine $([char]0x2013) Beta 0.2.2"
             $arguments = @(
               "release", "create", "${{ github.ref_name }}", $asset,
               "--title", $releaseTitle,

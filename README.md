@@ -1,6 +1,6 @@
 # OneNote Schnellbausteine
 
-**Beta 0.2** von **Stefan Malter | Malter365.de**
+**Beta 0.2.2** von **Stefan Malter | Malter365.de**
 
 OneNote Schnellbausteine ist ein bewusst kleines, lokales COM-Add-in für **OneNote
 Desktop unter Windows** (Microsoft 365 bzw. OneNote 2016). Markierte
@@ -21,15 +21,15 @@ kopierten OneMore-Quellcode.
 > Gespeicherte Bausteine unter `%LOCALAPPDATA%\Schnellbausteine\Data` werden
 > dabei nicht gelöscht.
 
-## Beta 0.2 herunterladen und installieren
+## Beta 0.2.2 herunterladen und installieren
 
 > [!IMPORTANT]
 > Dies ist eine öffentliche Testversion. Bitte wichtige OneNote-Notizbücher wie
 > gewohnt synchronisieren bzw. sichern.
 
 1. Im Release
-   [**OneNote Schnellbausteine – Beta 0.2**](https://github.com/stm1978/onenote-schnellbausteine/releases/tag/v0.2.0-beta.3)
-   die Datei **`OneNote-Schnellbausteine-Setup-Beta-0.2.exe`** herunterladen.
+   [**OneNote Schnellbausteine – Beta 0.2.2**](https://github.com/stm1978/onenote-schnellbausteine/releases/tag/v0.2.2-beta.1)
+   die Datei **`OneNote-Schnellbausteine-Setup-Beta-0.2.2.exe`** herunterladen.
 2. OneNote vollständig schließen.
 3. Die heruntergeladene Setup-Datei doppelklicken und **Installieren** wählen.
 4. OneNote neu starten.
@@ -47,12 +47,8 @@ Gespeicherte Schnellbausteine unter
 `%LOCALAPPDATA%\Schnellbausteine\Data` bleiben bei der Deinstallation
 standardmäßig erhalten.
 
-Die Beta kann bis einschließlich **31. Dezember 2026** vollständig verwendet
-werden. Ab dem 1. Dezember 2026 erscheint bei jedem Add-in-Start ein Hinweis auf
-das Ablaufdatum. Ab dem 1. Januar 2027 sind die Add-in-Funktionen gesperrt; die
-aktuelle Version kann unter [malter365.de](https://www.malter365.de/)
-heruntergeladen werden. Lokale Schnellbausteine werden durch Ablauf, Upgrade
-oder Deinstallation weder gelöscht noch verändert.
+Diese Version hat kein Ablaufdatum und sperrt ihre Funktionen nicht zeitgesteuert.
+Lokale Schnellbausteine werden durch Upgrade oder Deinstallation nicht gelöscht.
 
 > Die Vorabversion ist noch nicht digital signiert. Windows SmartScreen kann
 > deshalb beim ersten Start **Weitere Informationen > Trotzdem ausführen**
@@ -169,9 +165,9 @@ Dispatch-Bindung.
 ```powershell
 .\test.ps1 -Configuration Release -Platform x86
 .\test.ps1 -Configuration Release -Platform x64
-.\installer\Build-Setup.ps1 -Version 0.2.0-beta.1
+.\installer\Build-Setup.ps1 -Version 0.2.2-beta.1
 .\tests\Test-OneNoteStartup.ps1 `
-    -SetupPath .\artifacts\setup\OneNote-Schnellbausteine-Setup-Beta-0.2.exe
+    -SetupPath .\artifacts\setup\OneNote-Schnellbausteine-Setup-Beta-0.2.2.exe
 ```
 
 Die Build-Ausgaben liegen unter `artifacts\<Plattform>\<Konfiguration>`, Setup
@@ -186,6 +182,11 @@ vollständige DllHost-Lifecycle läuft lokal standardmäßig in `Test-Setup.ps1`
 tatsächlich installierten OneNote Desktop. OneNote muss davor vollständig
 geschlossen sein. Bei einem Tag `v*` wird Setup automatisch an ein GitHub
 Release angehängt.
+
+Die automatisierten XML-Roundtrip-Tests prüfen die Bewahrung der Ink-Daten und
+Rendering-Metadaten sowie die relative Position mehrerer Striche. Ein echter
+OneNote-Desktop-Test ist davon nicht ersetzt: Regenbogenstift-Darstellung und
+räumliche Positionierung müssen in OneNote manuell validiert werden.
 
 Die PowerShell-Skripte bleiben als Entwickler-Fallback verfügbar:
 
@@ -237,12 +238,11 @@ Damit folgt der Einfügepfad wie OneMores öffentlich beschriebenes
 Selection-Range statt einer globalen Outline-Suche, ohne OneMore-Code zu
 übernehmen.
 
-Die Beta-Laufzeit wird ausschließlich anhand der lokalen Windows-Kalenderzeit
-durch eine zentrale Policy bestimmt. Es gibt keine Netzwerkprüfung, Telemetrie
-oder persistierte Uhrzeitkontrolle. Der Start-Hinweis wird erst nach Rückkehr aus
-dem COM-Lifecycle-Callback auf den bestehenden UI-STA gestellt. Nach Ablauf
-prüfen sämtliche Aktionen die Policy erneut, bevor Repository-, OneNote-COM-
-oder Fachdialogzugriffe stattfinden.
+Beim Erfassen von Freihand werden die seitenbezogenen Ink-Positionen in ein
+gemeinsames relatives Koordinatensystem überführt und beim Einfügen gemeinsam
+am Ziel-Outline verankert. Die Ink-Binärdaten und Rendering-XML bleiben dabei
+erhalten. Die tatsächliche Darstellung des Regenbogenstifts und die Positionen
+der Striche müssen zusätzlich in OneNote manuell geprüft werden.
 
 ### Experimenteller OneNote-Realtest
 

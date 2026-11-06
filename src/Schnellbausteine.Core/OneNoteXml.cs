@@ -159,12 +159,19 @@ namespace Schnellbausteine.Core
 
             var snippet = new XElement(Snippet + "Snippet",
                 new XAttribute("version", "1"));
+            var geometry = new XElement(Snippet + "Geometry");
             double minimumWidth;
             if (TryDeriveMinimumWidth(capture.Outline, content, out minimumWidth))
             {
-                snippet.Add(new XElement(Snippet + "Geometry",
-                    new XAttribute("minWidth", FormatWidth(minimumWidth))));
+                geometry.SetAttributeValue("minWidth", FormatWidth(minimumWidth));
             }
+            bool relativeInkZ;
+            if (NormalizeInkPositions(content, out relativeInkZ))
+            {
+                geometry.SetAttributeValue("inkPositions", "relative");
+                if (relativeInkZ) geometry.SetAttributeValue("inkPositionZ", "relative");
+            }
+            if (geometry.HasAttributes) snippet.Add(geometry);
             snippet.Add(definitions, quickStyles, content);
             return new XDocument(snippet);
         }
@@ -341,10 +348,6 @@ namespace Schnellbausteine.Core
         private static XElement CreateInkRoot(XElement ink)
         {
             XElement clone = new XElement(ink);
-            foreach (XElement position in clone.DescendantsAndSelf(One + "Position").ToList())
-            {
-                position.Remove();
-            }
             return new XElement(One + "OE", clone);
         }
 
@@ -670,6 +673,7 @@ namespace Schnellbausteine.Core
             }
 
             foreach (XElement element in incoming) RemoveTransientAttributes(element);
+            RebaseInkPositions(incoming, selection.Outline, fragment);
             MergeTagDefinitions(page, fragment, incoming);
             MergeQuickStyleDefinitions(page, fragment, incoming);
             ClearSelection(page);
@@ -1396,6 +1400,153 @@ namespace Schnellbausteine.Core
                     CultureInfo.InvariantCulture,
                     out result) &&
                 IsPositiveFinite(result);
+        }
+
+        private static bool NormalizeInkPositions(XElement content, out bool hasZ)
+        {
+            hasZ = false;
+            List<XElement> inkDrawings = content.DescendantsAndSelf(One + "InkDrawing").ToList();
+            if (inkDrawings.Count == 0) return false;
+
+            var positions = new List<Tuple<XElement, double, double, double>>();
+            bool missingPosition = false;
+            foreach (XElement ink in inkDrawings)
+            {
+                XElement position = ink.Element(One + "Position");
+                double x;
+                double y;
+                double z = 0;
+                if (position == null)
+                {
+                    missingPosition = true;
+                    continue;
+                }
+                if (!TryReadCoordinate((string)position.Attribute("x"), out x) ||
+                    !TryReadCoordinate((string)position.Attribute("y"), out y))
+                {
+                    throw new InvalidOperationException(
+                        "Die Freihandauswahl enthält eine ungültige InkDrawing-Position.");
+                }
+                string zValue = (string)position.Attribute("z");
+                bool currentHasZ = zValue != null;
+                if (positions.Count > 0 && currentHasZ != hasZ)
+                {
+                    throw new InvalidOperationException(
+                        "Die Freihandauswahl enthält unvollständige InkDrawing-Positionen.");
+                }
+                if (positions.Count == 0) hasZ = currentHasZ;
+                if (currentHasZ && !TryReadCoordinate(zValue, out z))
+                {
+                    throw new InvalidOperationException(
+                        "Die Freihandauswahl enthält eine ungültige InkDrawing-Position.");
+                }
+                positions.Add(Tuple.Create(position, x, y, z));
+            }
+
+            if (positions.Count == 0) return false;
+            if (missingPosition)
+            {
+                throw new InvalidOperationException(
+                    "Die Freihandauswahl enthält InkDrawing-Objekte ohne eindeutige Position.");
+            }
+            if (positions.Count != inkDrawings.Count)
+            {
+                throw new InvalidOperationException(
+                    "Die Freihandauswahl enthält InkDrawing-Objekte ohne eindeutige Position.");
+            }
+
+            double originX = positions.Min(position => position.Item2);
+            double originY = positions.Min(position => position.Item3);
+            double originZ = hasZ ? positions.Min(position => position.Item4) : 0;
+            foreach (Tuple<XElement, double, double, double> position in positions)
+            {
+                position.Item1.SetAttributeValue("x", FormatWidth(position.Item2 - originX));
+                position.Item1.SetAttributeValue("y", FormatWidth(position.Item3 - originY));
+                if (hasZ)
+                {
+                    position.Item1.SetAttributeValue("z", FormatWidth(position.Item4 - originZ));
+                }
+            }
+            return true;
+        }
+
+        private static void RebaseInkPositions(
+            IList<XElement> roots,
+            XElement targetOutline,
+            XDocument fragment)
+        {
+            XElement geometry = fragment.Root.Element(Snippet + "Geometry");
+            if (geometry == null ||
+                !string.Equals(
+                    (string)geometry.Attribute("inkPositions"),
+                    "relative",
+                    StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            XElement targetPosition = targetOutline == null
+                ? null
+                : targetOutline.Element(One + "Position");
+            double targetX;
+            double targetY;
+            double targetZ = 0;
+            if (targetPosition == null ||
+                !TryReadCoordinate((string)targetPosition.Attribute("x"), out targetX) ||
+                !TryReadCoordinate((string)targetPosition.Attribute("y"), out targetY))
+            {
+                throw new InvalidOperationException(
+                    "Die Einfügeposition für die Freihandauswahl konnte nicht ermittelt werden.");
+            }
+            bool rebaseZ = string.Equals(
+                (string)geometry.Attribute("inkPositionZ"),
+                "relative",
+                StringComparison.Ordinal);
+            if (rebaseZ &&
+                !TryReadCoordinate((string)targetPosition.Attribute("z"), out targetZ))
+            {
+                throw new InvalidOperationException(
+                    "Die räumliche Einfügeposition für die Freihandauswahl konnte nicht ermittelt werden.");
+            }
+
+            foreach (XElement ink in roots.SelectMany(root =>
+                root.DescendantsAndSelf(One + "InkDrawing")))
+            {
+                XElement position = ink.Element(One + "Position");
+                double x;
+                double y;
+                if (position == null ||
+                    !TryReadCoordinate((string)position.Attribute("x"), out x) ||
+                    !TryReadCoordinate((string)position.Attribute("y"), out y))
+                {
+                    throw new InvalidOperationException(
+                        "Der gespeicherte Schnellbaustein enthält eine ungültige InkDrawing-Position.");
+                }
+
+                position.SetAttributeValue("x", FormatWidth(targetX + x));
+                position.SetAttributeValue("y", FormatWidth(targetY + y));
+                if (rebaseZ)
+                {
+                    double z;
+                    if (!TryReadCoordinate((string)position.Attribute("z"), out z))
+                    {
+                        throw new InvalidOperationException(
+                            "Der gespeicherte Schnellbaustein enthält eine ungültige InkDrawing-Position.");
+                    }
+                    position.SetAttributeValue("z", FormatWidth(targetZ + z));
+                }
+            }
+        }
+
+        private static bool TryReadCoordinate(string value, out double result)
+        {
+            return double.TryParse(
+                    value,
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out result) &&
+                !double.IsNaN(result) &&
+                !double.IsInfinity(result);
         }
 
         private static bool IsPositiveFinite(double value)
